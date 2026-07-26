@@ -8,12 +8,41 @@ on:
 permissions:
   actions: write
   contents: read
+  issues: write
 
 jobs:
   dispatch:
     runs-on: ubuntu-latest
+    timeout-minutes: 70
     steps:
-      - name: Dispatch migration workflow on main
+      - name: Dispatch, wait for, and report migration workflow
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run migrate-to-snowflake-chunks.yml --repo "$GITHUB_REPOSITORY" --ref main
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set +e
+          gh workflow run migrate-to-snowflake-chunks.yml --repo "$GITHUB_REPOSITORY" --ref main
+          dispatch_status=$?
+          sleep 8
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow migrate-to-snowflake-chunks.yml --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            echo 'Could not resolve dispatched migration run.' > migration.log
+            status=1
+          else
+            gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+            status=$?
+            gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log > migration.log 2>&1 || true
+          fi
+          {
+            echo "### Snowflake chunk migration run ${run_id:-unknown}"
+            echo
+            echo "dispatch_status=$dispatch_status final_status=$status"
+            echo
+            echo '```text'
+            tail -c 60000 migration.log
+            echo
+            echo '```'
+          } > migration-comment.md
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file migration-comment.md || true
+          exit "$status"
