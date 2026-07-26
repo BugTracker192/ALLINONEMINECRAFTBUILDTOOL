@@ -1,0 +1,1 @@
+Trigger the one-time force-add of the exact 319-byte reference schematic fixture.
