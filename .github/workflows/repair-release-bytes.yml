@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   repair:
@@ -18,11 +19,15 @@ jobs:
           ref: main
           fetch-depth: 1
           lfs: false
+          show-progress: false
 
       - name: Restore exact CRLF spec and binary fixture
         shell: bash
         run: |
-          python - <<'PY'
+          set +e
+          : > repair-report.txt
+
+          python - <<'PY' >> repair-report.txt 2>&1
           from pathlib import Path
           import base64, hashlib
 
@@ -46,20 +51,56 @@ jobs:
           for path, (digest, size) in expected.items():
               data = path.read_bytes()
               actual = hashlib.sha256(data).hexdigest()
+              print(f'{path}: size={len(data)} sha256={actual}')
               if actual != digest or len(data) != size:
-                  raise SystemExit(f'Byte repair failed for {path}: {len(data)} {actual}')
-              print(f'VERIFIED {path}: {len(data)} bytes {actual}')
+                  raise SystemExit(f'Byte repair failed for {path}: expected size={size} sha256={digest}')
+          print('PYTHON_REPAIR_OK')
           PY
+          py_status=$?
+          echo "python_status=$py_status" >> repair-report.txt
 
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .gitattributes \
-            minecraft-build-intelligence-snowflake-all-in-one-1.0.2/docs/MASTER_SPEC.md \
-            minecraft-build-intelligence-snowflake-all-in-one-1.0.2/tests/fixtures/reference.schem
+          if [ "$py_status" -eq 0 ]; then
+            git config user.name 'github-actions[bot]' >> repair-report.txt 2>&1
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com' >> repair-report.txt 2>&1
+            git add .gitattributes \
+              minecraft-build-intelligence-snowflake-all-in-one-1.0.2/docs/MASTER_SPEC.md \
+              minecraft-build-intelligence-snowflake-all-in-one-1.0.2/tests/fixtures/reference.schem >> repair-report.txt 2>&1
+            echo '--- git status --short ---' >> repair-report.txt
+            git status --short >> repair-report.txt 2>&1
 
-          if git diff --cached --quiet; then
-            echo 'Release bytes are already exact.'
+            if git diff --cached --quiet; then
+              echo 'Release bytes are already exact.' >> repair-report.txt
+              git_status=0
+            else
+              git commit -m 'Restore byte-exact release files' >> repair-report.txt 2>&1
+              commit_status=$?
+              echo "commit_status=$commit_status" >> repair-report.txt
+              if [ "$commit_status" -eq 0 ]; then
+                git push origin HEAD:main >> repair-report.txt 2>&1
+                push_status=$?
+                echo "push_status=$push_status" >> repair-report.txt
+                git_status=$push_status
+              else
+                git_status=$commit_status
+              fi
+            fi
           else
-            git commit -m 'Restore byte-exact release files'
-            git push origin HEAD:main
+            git_status=$py_status
           fi
+
+          cat repair-report.txt
+          exit "$git_status"
+
+      - name: Post repair report to Issue 1
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### Byte-exact repair — run ${{ github.run_id }}"
+            echo
+            echo '```text'
+            cat repair-report.txt
+            echo '```'
+          } > repair-comment.md
+          gh issue comment 1 --body-file repair-comment.md
