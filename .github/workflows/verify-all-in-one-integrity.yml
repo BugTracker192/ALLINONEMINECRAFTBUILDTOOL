@@ -20,6 +20,7 @@ jobs:
         with:
           lfs: true
           fetch-depth: 1
+          show-progress: false
 
       - name: Verify every release file and bundled asset
         shell: bash
@@ -67,22 +68,35 @@ jobs:
 
           asset = root / 'app/bundled_assets/minecraft.zip'
           asset_manifest = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text(encoding='utf-8'))
-          asset_sha = hashlib.sha256(asset.read_bytes()).hexdigest()
+          h = hashlib.sha256()
+          with asset.open('rb') as f:
+              for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
+                  h.update(chunk)
+          asset_sha = h.hexdigest()
+
           with zipfile.ZipFile(asset) as zf:
+              infos = zf.infolist()
               bad_member = zf.testzip()
-              archive_members = len(zf.infolist())
+              archive_members = sum(1 for i in infos if not i.is_dir())
               render_relevant = sum(
-                  1 for i in zf.infolist()
-                  if i.filename.startswith('assets/') and (
+                  1 for i in infos
+                  if not i.is_dir() and (
                       '/blockstates/' in i.filename or
                       '/models/block/' in i.filename or
                       '/textures/' in i.filename or
                       '/atlases/' in i.filename
-                  ) and not i.is_dir()
+                  )
               )
 
+          asset_ok = (
+              asset_sha == asset_manifest['sha256'] and
+              asset.stat().st_size == asset_manifest['size_bytes'] and
+              archive_members == asset_manifest['archive_members'] and
+              render_relevant == asset_manifest['render_relevant_members'] and
+              bad_member is None
+          )
           report = {
-              'passed': not missing and not extra and not mismatches and bad_member is None,
+              'passed': not missing and not extra and not mismatches and asset_ok,
               'manifest_version': manifest['version'],
               'manifest_file_count': manifest['file_count'],
               'verified_file_count': len(expected),
@@ -102,17 +116,11 @@ jobs:
                   'zip_test_bad_member': bad_member,
               },
           }
-          Path('integrity-report.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
-          print(json.dumps(report, indent=2, sort_keys=True))
-
-          if asset_sha != asset_manifest['sha256']:
-              report['passed'] = False
-          if asset.stat().st_size != asset_manifest['size_bytes']:
-              report['passed'] = False
-          if archive_members != asset_manifest['archive_members']:
-              report['passed'] = False
-          if render_relevant != asset_manifest['render_relevant_members']:
-              report['passed'] = False
+          report_text = json.dumps(report, indent=2, sort_keys=True) + '\n'
+          Path('integrity-report.json').write_text(report_text, encoding='utf-8')
+          print(report_text)
+          with Path(__import__('os').environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as f:
+              f.write('## All-in-one integrity audit\n\n```json\n' + report_text + '```\n')
           if not report['passed']:
               sys.exit(1)
           PY
@@ -120,10 +128,3 @@ jobs:
       - name: Run autonomous bootstrap textured smoke test
         working-directory: minecraft-build-intelligence-snowflake-all-in-one-1.0.2
         run: python BOOTSTRAP_SNOWFLAKE.py --smoke
-
-      - name: Upload audit report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: all-in-one-integrity-report
-          path: integrity-report.json
