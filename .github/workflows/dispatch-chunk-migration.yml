@@ -15,17 +15,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:
-      - name: Dispatch, wait for, and report migration workflow
+      - name: Dispatch, wait for, and report migration workflow v2
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set +e
-          gh workflow run migrate-to-snowflake-chunks.yml --repo "$GITHUB_REPOSITORY" --ref main
+          workflow='migrate-to-snowflake-chunks-v2.yml'
+          gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
           dispatch_status=$?
           sleep 8
-          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow migrate-to-snowflake-chunks.yml --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId')
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId')
           if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
             echo 'Could not resolve dispatched migration run.' > migration.log
             status=1
@@ -35,7 +36,7 @@ jobs:
             gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log > migration.log 2>&1 || true
           fi
           {
-            echo "### Snowflake chunk migration run ${run_id:-unknown}"
+            echo "### Snowflake chunk migration v2 run ${run_id:-unknown}"
             echo
             echo "dispatch_status=$dispatch_status final_status=$status"
             echo
