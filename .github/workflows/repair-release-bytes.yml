@@ -1,7 +1,7 @@
 name: Repair release bytes
 
 on:
-  push:
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -12,9 +12,10 @@ jobs:
   repair:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out main branch
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 1
           lfs: false
 
