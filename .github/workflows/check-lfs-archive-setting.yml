@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     paths: ['.github/workflows/check-lfs-archive-setting.yml']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
