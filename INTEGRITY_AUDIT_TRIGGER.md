@@ -1,3 +1,3 @@
 # Integrity audit trigger
 
-This temporary branch exists only to run the GitHub-hosted verifier and post its machine-readable report to Issue 1.
+This temporary branch now triggers the byte-exact repair workflow and the full integrity audit against main.
