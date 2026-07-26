@@ -1,0 +1,64 @@
+name: Repair release bytes
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Restore exact CRLF spec and binary fixture
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib
+
+          root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.2')
+
+          spec = root / 'docs/MASTER_SPEC.md'
+          text = spec.read_text(encoding='utf-8')
+          normalized = text.replace('\r\n', '\n').replace('\r', '\n')
+          spec.write_bytes(normalized.replace('\n', '\r\n').encode('utf-8'))
+
+          fixture = root / 'tests/fixtures/reference.schem'
+          fixture.parent.mkdir(parents=True, exist_ok=True)
+          fixture.write_bytes(base64.b64decode(
+              'H4sIAAAAAAAC/7VQwUrDQBB9bdKmTSkFT/6BlwqeC7mIggergqCHImGaTJKlm92anbb689ZNBIsf4MDMDo/33jIvBmKMn7OKaxKVBYheuHHKGgBBgMkNCf0is/cYoyUL5R4dIXygmnFG7rOuWRqVXWa2MZ6MPgavKpcKUR/DO1ZlJQj8es+m9OhgguFjUTiW9pfj8fjVvr4HMYbX2mYbFyN6Is0iHGBaK8NZQ4UsSDXouBf8QfVWc1rbfLEzG2MPJl230tWeGkVGkrXe8Zsn9wIsTw6WNqkT7+NWBWXKlAmTk3lFukjEbueuoi0nyvg7Us2FzA8k3GhblpwnBWnXefYDzE6eTqzhn8DOT2gnXGnes06uWlGICGEbqN9Ve673wf9V2M3eGNMu0lsjShT7ZNsaY/QXwDfE3LqICgIAAA=='
+          ))
+
+          expected = {
+              spec: ('72e8716a55ca8dde406829850c79db2b831dc56beced0084b82efae2a27847be', 83149),
+              fixture: ('38b7526b6977759fcf1dd1a9f49d78eea0ed614ad88b781e556d130d3a16857f', 319),
+          }
+          for path, (digest, size) in expected.items():
+              data = path.read_bytes()
+              actual = hashlib.sha256(data).hexdigest()
+              if actual != digest or len(data) != size:
+                  raise SystemExit(f'Byte repair failed for {path}: {len(data)} {actual}')
+              print(f'VERIFIED {path}: {len(data)} bytes {actual}')
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .gitattributes \
+            minecraft-build-intelligence-snowflake-all-in-one-1.0.2/docs/MASTER_SPEC.md \
+            minecraft-build-intelligence-snowflake-all-in-one-1.0.2/tests/fixtures/reference.schem
+
+          if git diff --cached --quiet; then
+            echo 'Release bytes are already exact.'
+          else
+            git commit -m 'Restore byte-exact release files'
+            git push origin HEAD:main
+          fi
