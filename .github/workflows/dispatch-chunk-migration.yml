@@ -13,16 +13,16 @@ permissions:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
-      - name: Dispatch, wait for, and report fixture repair
+      - name: Dispatch, wait for, and report bootstrap repair
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set +e
-          workflow='repair-1.0.3-fixture.yml'
+          workflow='repair-1.0.3-bootstrap-reexec.yml'
           gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
           dispatch_status=$?
           sleep 8
@@ -36,7 +36,7 @@ jobs:
             gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log > repair.log 2>&1 || true
           fi
           {
-            echo "### 1.0.3 fixture repair run ${run_id:-unknown}"
+            echo "### 1.0.3 bootstrap repair run ${run_id:-unknown}"
             echo
             echo "dispatch_status=$dispatch_status final_status=$status"
             echo
