@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   verify:
@@ -140,11 +141,16 @@ jobs:
         working-directory: minecraft-build-intelligence-snowflake-all-in-one-1.0.2
         run: python BOOTSTRAP_SNOWFLAKE.py --smoke
 
-      - name: Upload integrity JSON
+      - name: Post integrity report to Issue 1
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: all-in-one-integrity-report-${{ github.run_id }}
-          path: ${{ github.workspace }}/integrity-report.json
-          if-no-files-found: error
-          retention-days: 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### GitHub-hosted integrity audit — run ${{ github.run_id }}"
+            echo
+            echo '```json'
+            cat integrity-report.json
+            echo '```'
+          } > audit-comment.md
+          gh issue comment 1 --body-file audit-comment.md
