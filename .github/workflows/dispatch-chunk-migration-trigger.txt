@@ -1,1 +1,1 @@
-Trigger marker updated again after adding migration run diagnostics.
+Trigger the corrected Snowflake-native chunk migration v2.
