@@ -1,4 +1,4 @@
-name: Dispatch Snowflake chunk migration
+name: Dispatch one-time release repair
 
 on:
   pull_request:
@@ -13,37 +13,37 @@ permissions:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 20
     steps:
-      - name: Dispatch, wait for, and report migration workflow v2
+      - name: Dispatch, wait for, and report fixture repair
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set +e
-          workflow='migrate-to-snowflake-chunks-v2.yml'
+          workflow='repair-1.0.3-fixture.yml'
           gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
           dispatch_status=$?
           sleep 8
           run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId')
           if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
-            echo 'Could not resolve dispatched migration run.' > migration.log
+            echo 'Could not resolve dispatched repair run.' > repair.log
             status=1
           else
             gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
             status=$?
-            gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log > migration.log 2>&1 || true
+            gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log > repair.log 2>&1 || true
           fi
           {
-            echo "### Snowflake chunk migration v2 run ${run_id:-unknown}"
+            echo "### 1.0.3 fixture repair run ${run_id:-unknown}"
             echo
             echo "dispatch_status=$dispatch_status final_status=$status"
             echo
             echo '```text'
-            tail -c 60000 migration.log
+            tail -c 30000 repair.log
             echo
             echo '```'
-          } > migration-comment.md
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file migration-comment.md || true
+          } > repair-comment.md
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file repair-comment.md || true
           exit "$status"
