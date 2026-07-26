@@ -25,103 +25,114 @@ jobs:
       - name: Verify every release file and bundled asset
         shell: bash
         run: |
+          echo '{"passed": false, "error": "audit did not start"}' > integrity-report.json
           python - <<'PY'
           from pathlib import Path
-          import hashlib, json, zipfile, sys, os
+          import hashlib, json, zipfile, sys, os, traceback
 
-          root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.2')
-          manifest_path = root / 'RELEASE_FILE_MANIFEST.json'
-          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          report = {'passed': False}
+          try:
+              root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.2')
+              manifest_path = root / 'RELEASE_FILE_MANIFEST.json'
+              manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 
-          expected = {entry['path']: entry for entry in manifest['files']}
-          actual = {
-              p.relative_to(root).as_posix()
-              for p in root.rglob('*')
-              if p.is_file()
-          }
-          expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json'}
+              expected = {entry['path']: entry for entry in manifest['files']}
+              actual = {
+                  p.relative_to(root).as_posix()
+                  for p in root.rglob('*')
+                  if p.is_file()
+              }
+              expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json'}
 
-          missing = sorted(expected_actual - actual)
-          extra = sorted(actual - expected_actual)
-          mismatches = []
-          verified_bytes = 0
+              missing = sorted(expected_actual - actual)
+              extra = sorted(actual - expected_actual)
+              mismatches = []
+              verified_bytes = 0
 
-          for rel, entry in sorted(expected.items()):
-              path = root / rel
-              if not path.is_file():
-                  continue
-              size = path.stat().st_size
+              for rel, entry in sorted(expected.items()):
+                  path = root / rel
+                  if not path.is_file():
+                      continue
+                  size = path.stat().st_size
+                  h = hashlib.sha256()
+                  with path.open('rb') as f:
+                      for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
+                          h.update(chunk)
+                  digest = h.hexdigest()
+                  verified_bytes += size
+                  if size != entry['size_bytes'] or digest != entry['sha256']:
+                      mismatches.append({
+                          'path': rel,
+                          'expected_size': entry['size_bytes'],
+                          'actual_size': size,
+                          'expected_sha256': entry['sha256'],
+                          'actual_sha256': digest,
+                      })
+
+              asset = root / 'app/bundled_assets/minecraft.zip'
+              asset_manifest = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text(encoding='utf-8'))
               h = hashlib.sha256()
-              with path.open('rb') as f:
+              with asset.open('rb') as f:
                   for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
                       h.update(chunk)
-              digest = h.hexdigest()
-              verified_bytes += size
-              if size != entry['size_bytes'] or digest != entry['sha256']:
-                  mismatches.append({
-                      'path': rel,
-                      'expected_size': entry['size_bytes'],
-                      'actual_size': size,
-                      'expected_sha256': entry['sha256'],
-                      'actual_sha256': digest,
-                  })
+              asset_sha = h.hexdigest()
 
-          asset = root / 'app/bundled_assets/minecraft.zip'
-          asset_manifest = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text(encoding='utf-8'))
-          h = hashlib.sha256()
-          with asset.open('rb') as f:
-              for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
-                  h.update(chunk)
-          asset_sha = h.hexdigest()
-
-          with zipfile.ZipFile(asset) as zf:
-              infos = zf.infolist()
-              bad_member = zf.testzip()
-              archive_members = sum(1 for i in infos if not i.is_dir())
-              render_relevant = sum(
-                  1 for i in infos
-                  if not i.is_dir() and (
-                      '/blockstates/' in i.filename or
-                      '/models/block/' in i.filename or
-                      '/textures/' in i.filename or
-                      '/atlases/' in i.filename
+              with zipfile.ZipFile(asset) as zf:
+                  infos = zf.infolist()
+                  bad_member = zf.testzip()
+                  archive_members = sum(1 for i in infos if not i.is_dir())
+                  render_relevant = sum(
+                      1 for i in infos
+                      if not i.is_dir() and (
+                          '/blockstates/' in i.filename or
+                          '/models/block/' in i.filename or
+                          '/textures/' in i.filename or
+                          '/atlases/' in i.filename
+                      )
                   )
-              )
 
-          asset_ok = (
-              asset_sha == asset_manifest['sha256'] and
-              asset.stat().st_size == asset_manifest['size_bytes'] and
-              archive_members == asset_manifest['archive_members'] and
-              render_relevant == asset_manifest['render_relevant_members'] and
-              bad_member is None
-          )
-          report = {
-              'passed': not missing and not extra and not mismatches and asset_ok,
-              'manifest_version': manifest['version'],
-              'manifest_file_count': manifest['file_count'],
-              'verified_file_count': len(expected),
-              'verified_bytes': verified_bytes,
-              'missing': missing,
-              'extra': extra,
-              'mismatches': mismatches,
-              'asset': {
-                  'sha256': asset_sha,
-                  'expected_sha256': asset_manifest['sha256'],
-                  'size_bytes': asset.stat().st_size,
-                  'expected_size_bytes': asset_manifest['size_bytes'],
-                  'archive_members': archive_members,
-                  'expected_archive_members': asset_manifest['archive_members'],
-                  'render_relevant_members': render_relevant,
-                  'expected_render_relevant_members': asset_manifest['render_relevant_members'],
-                  'zip_test_bad_member': bad_member,
-              },
-          }
+              asset_ok = (
+                  asset_sha == asset_manifest['sha256'] and
+                  asset.stat().st_size == asset_manifest['size_bytes'] and
+                  archive_members == asset_manifest['archive_members'] and
+                  render_relevant == asset_manifest['render_relevant_members'] and
+                  bad_member is None
+              )
+              report = {
+                  'passed': not missing and not extra and not mismatches and asset_ok,
+                  'manifest_version': manifest['version'],
+                  'manifest_file_count': manifest['file_count'],
+                  'verified_file_count': len(expected),
+                  'verified_bytes': verified_bytes,
+                  'missing': missing,
+                  'extra': extra,
+                  'mismatches': mismatches,
+                  'asset': {
+                      'sha256': asset_sha,
+                      'expected_sha256': asset_manifest['sha256'],
+                      'size_bytes': asset.stat().st_size,
+                      'expected_size_bytes': asset_manifest['size_bytes'],
+                      'archive_members': archive_members,
+                      'expected_archive_members': asset_manifest['archive_members'],
+                      'render_relevant_members': render_relevant,
+                      'expected_render_relevant_members': asset_manifest['render_relevant_members'],
+                      'zip_test_bad_member': bad_member,
+                  },
+              }
+          except Exception as exc:
+              report = {
+                  'passed': False,
+                  'error_type': type(exc).__name__,
+                  'error': str(exc),
+                  'traceback': traceback.format_exc(),
+              }
+
           report_text = json.dumps(report, indent=2, sort_keys=True) + '\n'
           Path('integrity-report.json').write_text(report_text, encoding='utf-8')
           print(report_text)
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as f:
               f.write('## All-in-one integrity audit\n\n```json\n' + report_text + '```\n')
-          if not report['passed']:
+          if not report.get('passed'):
               sys.exit(1)
           PY
 
