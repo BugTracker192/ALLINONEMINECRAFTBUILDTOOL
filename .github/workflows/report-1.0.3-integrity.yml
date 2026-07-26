@@ -1,0 +1,100 @@
+name: Report exact 1.0.3 integrity mismatches
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Generate exact comparison report
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, traceback
+
+          root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.3')
+          def sha256(path):
+              h = hashlib.sha256()
+              with path.open('rb') as stream:
+                  for block in iter(lambda: stream.read(8 * 1024 * 1024), b''):
+                      h.update(block)
+              return h.hexdigest()
+
+          report = {'passed': False}
+          try:
+              manifest = json.loads((root / 'RELEASE_FILE_MANIFEST.json').read_text('utf-8'))
+              expected = {entry['path']: entry for entry in manifest['files']}
+              actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
+              expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json'}
+              missing = sorted(expected_actual - actual)
+              extra = sorted(actual - expected_actual)
+              mismatches = []
+              for relative, entry in sorted(expected.items()):
+                  path = root / relative
+                  if not path.is_file():
+                      continue
+                  size = path.stat().st_size
+                  digest = sha256(path)
+                  if size != entry['size_bytes'] or digest != entry['sha256']:
+                      mismatches.append({
+                          'path': relative,
+                          'expected_size': entry['size_bytes'],
+                          'actual_size': size,
+                          'expected_sha256': entry['sha256'],
+                          'actual_sha256': digest,
+                      })
+              asset_manifest = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text('utf-8'))
+              parts = []
+              parts_ok = True
+              parts_dir = root / 'app/bundled_assets' / asset_manifest['delivery']['parts_directory']
+              for entry in asset_manifest['delivery']['parts']:
+                  path = parts_dir / entry['name']
+                  exists = path.is_file()
+                  size = path.stat().st_size if exists else None
+                  digest = sha256(path) if exists else None
+                  passed = exists and size == entry['size_bytes'] and digest == entry['sha256']
+                  parts_ok = parts_ok and passed
+                  parts.append({'name': entry['name'], 'passed': passed, 'size_bytes': size, 'sha256': digest})
+              report = {
+                  'passed': not missing and not extra and not mismatches and parts_ok,
+                  'version': manifest['version'],
+                  'manifest_file_count': manifest['file_count'],
+                  'actual_release_file_count': len(actual),
+                  'missing': missing,
+                  'extra': extra,
+                  'mismatches': mismatches,
+                  'parts': parts,
+              }
+          except Exception as exc:
+              report = {'passed': False, 'error': str(exc), 'traceback': traceback.format_exc()}
+          Path('report.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', 'utf-8')
+          print(Path('report.json').read_text('utf-8'))
+          PY
+
+      - name: Post report to pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo '### Exact 1.0.3 integrity report'
+            echo
+            echo '```json'
+            cat report.json
+            echo '```'
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file comment.md
