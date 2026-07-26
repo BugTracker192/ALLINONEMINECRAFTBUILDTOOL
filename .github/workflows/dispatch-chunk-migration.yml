@@ -1,0 +1,19 @@
+name: Dispatch Snowflake chunk migration
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/dispatch-chunk-migration-trigger.txt']
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch migration workflow on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run migrate-to-snowflake-chunks.yml --repo "$GITHUB_REPOSITORY" --ref main
