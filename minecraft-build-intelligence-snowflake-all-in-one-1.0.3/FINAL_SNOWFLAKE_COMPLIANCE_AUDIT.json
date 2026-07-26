@@ -1,0 +1,54 @@
+{
+  "agent_manual": "SNOWFLAKE_COCO_AUTONOMOUS_LLM_AGENT_GUIDE.md",
+  "autonomous_bootstrap": "BOOTSTRAP_SNOWFLAKE.py",
+  "bundled_assets": {
+    "archive_members": 16572,
+    "default_resolution_policy": "auto-discovered unless explicit --resource-pack or MBI_RESOURCE_PACK overrides",
+    "path": "app/bundled_assets/minecraft.zip",
+    "private_user_supplied_asset_bundle": true,
+    "redistribution_notice": "User-supplied Minecraft assets are bundled only in this private deliverable. Do not publish or redistribute them without authorization.",
+    "render_relevant_members": 8092,
+    "schema_version": "1.0",
+    "sha256": "f99aefac7040f85c67b509ebc63a56e542d5f250fd51040d6a3bd7f97e6e5bbc",
+    "size_bytes": 411443953
+  },
+  "dependency_policy": "BOOTSTRAP_SNOWFLAKE.py installs mandatory dependencies with pip only when missing; no other mandatory external service or executable is required.",
+  "flat_render_opt_out": [
+    "MBI_DISABLE_BUNDLED_ASSETS=1",
+    "--resource-pack none"
+  ],
+  "installed_wheel_smoke": {
+    "bundled_asset_found_inside_installed_package": true,
+    "coordinate_mismatches": 0,
+    "render_mode": "software-textured",
+    "render_tier": 2,
+    "round_trip_passed": true,
+    "state_mismatches": 0,
+    "wheel": "minecraft_build_intelligence-1.0.3-py3-none-any.whl",
+    "wheel_size_bytes": 411616126
+  },
+  "mandatory_runtime_dependencies": [
+    "numpy>=2.0,<3",
+    "Pillow>=12.3,<13"
+  ],
+  "private_all_in_one": true,
+  "release_version": "1.0.3",
+  "resource_pack_resolution_order": [
+    "explicit argument",
+    "MBI_RESOURCE_PACK",
+    "bundled archive",
+    "nearby workspace archive"
+  ],
+  "schema_version": "1.0",
+  "source_smoke": {
+    "asset_hash": "f99aefac7040f85c67b509ebc63a56e542d5f250fd51040d6a3bd7f97e6e5bbc",
+    "render_mode": "software-textured",
+    "render_tier": 2,
+    "snapshots": 15
+  },
+  "tests": {
+    "failed": 0,
+    "passed": 82,
+    "skipped": 0
+  }
+}

@@ -1,8 +1,0 @@
-# Versions dynamically exercised in the release environment.
-numpy==2.3.5
-Pillow==12.3.0
-httpx==0.28.1
-cryptography==46.0.4
-pytest==9.0.2
-# Hypothesis is intentionally constrained by pyproject.toml. The execution
-# environment's package mirror did not expose it, so no unverified exact pin is claimed.

@@ -1,0 +1,65 @@
+{
+  "archive_members": 16572,
+  "default_resolution_policy": "explicit override, environment override, verified complete bundle, or automatic reconstruction from ordinary-Git parts",
+  "delivery": {
+    "cache_environment_variable": "MBI_ASSET_CACHE_DIR",
+    "chunk_size_bytes": 50331648,
+    "mode": "ordinary-git-chunks",
+    "parts": [
+      {
+        "name": "minecraft.zip.part000",
+        "sha256": "55edf653dbcc829d85e0ec15652298416387113894808d9e317b46785ef977fc",
+        "size_bytes": 50331648
+      },
+      {
+        "name": "minecraft.zip.part001",
+        "sha256": "01f2d5dd3f8c1cad28ce975b84352ee9449f5dea14b5bcf0f4f17794d49c082d",
+        "size_bytes": 50331648
+      },
+      {
+        "name": "minecraft.zip.part002",
+        "sha256": "d3cd5370ba4bd343c5eebfc7aaec8834a2f6a8c57d78bfe378be2bf6d2d42722",
+        "size_bytes": 50331648
+      },
+      {
+        "name": "minecraft.zip.part003",
+        "sha256": "bbe86f9ad1df83e14eef621a16610acf05345c30c72ed41f54ebe65ed2262446",
+        "size_bytes": 50331648
+      },
+      {
+        "name": "minecraft.zip.part004",
+        "sha256": "d6b9837bcf32ec4233e3b9746cd61ab1ac9a5b81b5c8672bf5d01a3d45d0bcf9",
+        "size_bytes": 50331648
+      },
+      {
+        "name": "minecraft.zip.part005",
+        "sha256": "903252dce65e5b7333ddd1f7b5803250036a94c5d1f04ad93898ea2368b09431",
+        "size_bytes": 50331648
+      },
+      {
+        "name": "minecraft.zip.part006",
+        "sha256": "b0f3e8b244534246046fdfa9bf16e81f4bcb9ba2c0b16bdf274b9f3600ddac45",
+        "size_bytes": 50331648
+      },
+      {
+        "name": "minecraft.zip.part007",
+        "sha256": "16a4ecc22055d995f5886533d0ae4b9f2f121d33e62ac9d6ee7a834dea8525d8",
+        "size_bytes": 50331648
+      },
+      {
+        "name": "minecraft.zip.part008",
+        "sha256": "02bcd0311b4e0d61e7f9abe00a828fb0e7b00c5d885cfcccc614684c0e4370c8",
+        "size_bytes": 8790769
+      }
+    ],
+    "parts_directory": "parts"
+  },
+  "filename": "minecraft.zip",
+  "path": "app/bundled_assets/minecraft.zip",
+  "private_user_supplied_asset_bundle": true,
+  "redistribution_notice": "User-supplied Minecraft assets are bundled only in this private deliverable. Do not publish or redistribute them without authorization.",
+  "render_relevant_members": 8092,
+  "schema_version": "1.1",
+  "sha256": "f99aefac7040f85c67b509ebc63a56e542d5f250fd51040d6a3bd7f97e6e5bbc",
+  "size_bytes": 411443953
+}
