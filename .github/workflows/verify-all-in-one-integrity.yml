@@ -22,121 +22,93 @@ jobs:
           fetch-depth: 1
           show-progress: false
 
-      - name: Verify every 1.0.3 release file and ordinary-Git asset part
+      - name: Verify every release file and all ordinary-Git asset parts
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib, json, sys, traceback
+          import hashlib, json
 
           root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.3')
-          report = {'passed': False}
-
-          def sha256(path: Path) -> str:
+          def sha256(path):
               h = hashlib.sha256()
               with path.open('rb') as stream:
                   for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b''):
                       h.update(chunk)
               return h.hexdigest()
 
-          try:
-              release_manifest = json.loads((root / 'RELEASE_FILE_MANIFEST.json').read_text('utf-8'))
-              expected = {entry['path']: entry for entry in release_manifest['files']}
-              actual = {
-                  path.relative_to(root).as_posix()
-                  for path in root.rglob('*')
-                  if path.is_file()
-              }
-              expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json'}
-              missing = sorted(expected_actual - actual)
-              extra = sorted(actual - expected_actual)
-              mismatches = []
-              verified_bytes = 0
+          release = json.loads((root / 'RELEASE_FILE_MANIFEST.json').read_text('utf-8'))
+          expected = {entry['path']: entry for entry in release['files']}
+          actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
+          expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json'}
+          missing = sorted(expected_actual - actual)
+          extra = sorted(actual - expected_actual)
+          mismatches = []
+          for relative, entry in sorted(expected.items()):
+              path = root / relative
+              if not path.is_file():
+                  continue
+              size = path.stat().st_size
+              digest = sha256(path)
+              if size != entry['size_bytes'] or digest != entry['sha256']:
+                  mismatches.append({'path': relative, 'expected_size': entry['size_bytes'], 'actual_size': size, 'expected_sha256': entry['sha256'], 'actual_sha256': digest})
 
-              for relative, entry in sorted(expected.items()):
-                  path = root / relative
-                  if not path.is_file():
-                      continue
-                  size = path.stat().st_size
-                  digest = sha256(path)
-                  verified_bytes += size
-                  if size != entry['size_bytes'] or digest != entry['sha256']:
-                      mismatches.append({
-                          'path': relative,
-                          'expected_size': entry['size_bytes'],
-                          'actual_size': size,
-                          'expected_sha256': entry['sha256'],
-                          'actual_sha256': digest,
-                      })
+          asset = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text('utf-8'))
+          parts_dir = root / 'app/bundled_assets' / asset['delivery']['parts_directory']
+          parts = []
+          for index, entry in enumerate(asset['delivery']['parts']):
+              path = parts_dir / entry['name']
+              exists = path.is_file()
+              size = path.stat().st_size if exists else None
+              digest = sha256(path) if exists else None
+              parts.append({'index': index, 'name': entry['name'], 'passed': exists and size == entry['size_bytes'] and digest == entry['sha256'], 'size_bytes': size, 'sha256': digest})
 
-              asset_manifest = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text('utf-8'))
-              delivery = asset_manifest['delivery']
-              parts_dir = root / 'app/bundled_assets' / delivery['parts_directory']
-              part_results = []
-              parts_ok = True
-              for index, entry in enumerate(delivery['parts']):
-                  part = parts_dir / entry['name']
-                  exists = part.is_file()
-                  size = part.stat().st_size if exists else None
-                  digest = sha256(part) if exists else None
-                  passed = exists and size == entry['size_bytes'] and digest == entry['sha256']
-                  parts_ok = parts_ok and passed
-                  part_results.append({
-                      'index': index,
-                      'name': entry['name'],
-                      'passed': passed,
-                      'size_bytes': size,
-                      'sha256': digest,
-                  })
-
-              full_pointer = root / 'app/bundled_assets/minecraft.zip'
-              report = {
-                  'passed': not missing and not extra and not mismatches and parts_ok and not full_pointer.exists(),
-                  'version': release_manifest['version'],
-                  'manifest_file_count': release_manifest['file_count'],
-                  'verified_file_count': len(expected),
-                  'verified_bytes': verified_bytes,
-                  'missing': missing,
-                  'extra': extra,
-                  'mismatches': mismatches,
-                  'delivery_mode': delivery['mode'],
-                  'part_count': len(part_results),
-                  'parts': part_results,
-                  'full_lfs_pointer_absent': not full_pointer.exists(),
-                  'expected_asset_size_bytes': asset_manifest['size_bytes'],
-                  'expected_asset_sha256': asset_manifest['sha256'],
-              }
-          except Exception as exc:
-              report = {
-                  'passed': False,
-                  'error_type': type(exc).__name__,
-                  'error': str(exc),
-                  'traceback': traceback.format_exc(),
-              }
-
-          text = json.dumps(report, indent=2, sort_keys=True) + '\n'
-          Path('integrity-report.json').write_text(text, 'utf-8')
-          print(text)
-          if not report.get('passed'):
-              sys.exit(1)
+          report = {
+              'passed': not missing and not extra and not mismatches and all(item['passed'] for item in parts) and not (root / 'app/bundled_assets/minecraft.zip').exists(),
+              'version': release['version'],
+              'manifest_file_count': release['file_count'],
+              'actual_release_file_count': len(actual),
+              'missing': missing,
+              'extra': extra,
+              'mismatches': mismatches,
+              'delivery_mode': asset['delivery']['mode'],
+              'parts': parts,
+              'full_lfs_pointer_absent': not (root / 'app/bundled_assets/minecraft.zip').exists(),
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if not report['passed']:
+              raise SystemExit(1)
           PY
 
-      - name: Simulate extracted Snowflake workspace and reconstruct exact archive
+      - name: Create extracted Snowflake-style snapshot
         shell: bash
         run: |
-          rm -rf /tmp/mbi-snowflake-snapshot /tmp/mbi-snowflake-cache
+          rm -rf /tmp/mbi-snowflake-snapshot /tmp/mbi-snowflake-cache /tmp/mbi-snowflake-smoke
           mkdir -p /tmp/mbi-snowflake-snapshot
           cp -a minecraft-build-intelligence-snowflake-all-in-one-1.0.3/. /tmp/mbi-snowflake-snapshot/
           test ! -e /tmp/mbi-snowflake-snapshot/.git
           test ! -e /tmp/mbi-snowflake-snapshot/app/bundled_assets/minecraft.zip
-          cd /tmp/mbi-snowflake-snapshot
-          MBI_ASSET_CACHE_DIR=/tmp/mbi-snowflake-cache python - <<'PY'
-          from app.assets.bundled import ensure_bundled_asset, load_bundled_asset_manifest
+          test "$(find /tmp/mbi-snowflake-snapshot/app/bundled_assets/parts -type f | wc -l)" -eq 9
+
+      - name: Run autonomous bootstrap with automatic reconstruction and textured smoke
+        working-directory: /tmp/mbi-snowflake-snapshot
+        env:
+          MBI_ASSET_CACHE_DIR: /tmp/mbi-snowflake-cache
+        run: python BOOTSTRAP_SNOWFLAKE.py --smoke --out /tmp/mbi-snowflake-smoke
+
+      - name: Verify reconstructed archive and textured diagnostics
+        shell: bash
+        run: |
+          python - <<'PY'
           from pathlib import Path
           import hashlib, json, zipfile
 
-          manifest = load_bundled_asset_manifest()
-          asset = ensure_bundled_asset(verify=True)
+          snapshot = Path('/tmp/mbi-snowflake-snapshot')
+          manifest = json.loads((snapshot / 'app/bundled_assets/ASSET_MANIFEST.json').read_text('utf-8'))
+          matches = list(Path('/tmp/mbi-snowflake-cache').glob('minecraft-*.zip'))
+          if len(matches) != 1:
+              raise SystemExit(f'Expected one reconstructed archive, found {matches}')
+          asset = matches[0]
           h = hashlib.sha256()
           with asset.open('rb') as stream:
               for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b''):
@@ -146,59 +118,22 @@ jobs:
               infos = archive.infolist()
               bad_member = archive.testzip()
               members = sum(1 for info in infos if not info.is_dir())
-              render_relevant = sum(
-                  1 for info in infos
-                  if not info.is_dir() and (
-                      '/blockstates/' in info.filename or
-                      '/models/block/' in info.filename or
-                      '/textures/' in info.filename or
-                      '/atlases/' in info.filename
-                  )
-              )
-          result = {
-              'passed': (
-                  asset.stat().st_size == manifest['size_bytes'] and
-                  digest == manifest['sha256'] and
-                  members == manifest['archive_members'] and
-                  render_relevant == manifest['render_relevant_members'] and
-                  bad_member is None
-              ),
-              'path': str(asset),
-              'size_bytes': asset.stat().st_size,
-              'sha256': digest,
+              render_relevant = sum(1 for info in infos if not info.is_dir() and ('/blockstates/' in info.filename or '/models/block/' in info.filename or '/textures/' in info.filename or '/atlases/' in info.filename))
+          diagnostics = json.loads(Path('/tmp/mbi-snowflake-smoke/diagnostics.json').read_text('utf-8'))
+          report = {
+              'passed': asset.stat().st_size == manifest['size_bytes'] and digest == manifest['sha256'] and members == manifest['archive_members'] and render_relevant == manifest['render_relevant_members'] and bad_member is None and diagnostics.get('render_mode') == 'software-textured',
+              'git_directory_present': (snapshot / '.git').exists(),
+              'git_lfs_required': False,
+              'remote_required': False,
+              'reconstructed_size_bytes': asset.stat().st_size,
+              'reconstructed_sha256': digest,
               'archive_members': members,
               'render_relevant_members': render_relevant,
               'zip_test_bad_member': bad_member,
-              'git_directory_present': Path('.git').exists(),
+              'render_mode': diagnostics.get('render_mode'),
+              'render_tier': diagnostics.get('render_tier'),
           }
-          print(json.dumps(result, indent=2, sort_keys=True))
-          if not result['passed']:
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if not report['passed']:
               raise SystemExit(1)
           PY
-
-      - name: Run autonomous textured smoke test in extracted snapshot
-        working-directory: /tmp/mbi-snowflake-snapshot
-        env:
-          MBI_ASSET_CACHE_DIR: /tmp/mbi-snowflake-cache
-        run: python BOOTSTRAP_SNOWFLAKE.py --smoke --out /tmp/mbi-snowflake-smoke
-
-      - name: Verify smoke diagnostics
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import json
-          path = Path('/tmp/mbi-snowflake-smoke/diagnostics.json')
-          value = json.loads(path.read_text('utf-8'))
-          print(json.dumps(value, indent=2, sort_keys=True))
-          if value.get('render_mode') != 'software-textured':
-              raise SystemExit('Smoke run was not software-textured')
-          PY
-
-      - name: Upload machine-readable audit
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: all-in-one-1.0.3-integrity-${{ github.run_id }}
-          path: integrity-report.json
-          retention-days: 7
-          if-no-files-found: warn
