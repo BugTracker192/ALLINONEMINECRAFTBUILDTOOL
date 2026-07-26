@@ -1,0 +1,84 @@
+name: Check source archive LFS inclusion
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/check-lfs-archive-setting.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download GitHub-generated source ZIP and inspect bundled asset
+        id: archive_check
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/zipball/main" > source.zip
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, zipfile
+
+          expected_size = 411_443_953
+          expected_sha = 'f99aefac7040f85c67b509ebc63a56e542d5f250fd51040d6a3bd7f97e6e5bbc'
+          suffix = '/minecraft-build-intelligence-snowflake-all-in-one-1.0.2/app/bundled_assets/minecraft.zip'
+
+          with zipfile.ZipFile('source.zip') as zf:
+              matches = [i for i in zf.infolist() if i.filename.endswith(suffix)]
+              if len(matches) != 1:
+                  report = {
+                      'passed': False,
+                      'reason': 'asset path not found exactly once',
+                      'match_count': len(matches),
+                  }
+              else:
+                  info = matches[0]
+                  h = hashlib.sha256()
+                  with zf.open(info) as f:
+                      for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
+                          h.update(chunk)
+                  digest = h.hexdigest()
+                  report = {
+                      'passed': info.file_size == expected_size and digest == expected_sha,
+                      'archive_entry': info.filename,
+                      'size_bytes': info.file_size,
+                      'expected_size_bytes': expected_size,
+                      'sha256': digest,
+                      'expected_sha256': expected_sha,
+                      'is_lfs_pointer': info.file_size < 1024,
+                  }
+
+          text = json.dumps(report, indent=2, sort_keys=True) + '\n'
+          Path('archive-lfs-result.json').write_text(text, encoding='utf-8')
+          print(text)
+          if not report.get('passed'):
+              raise SystemExit(1)
+          PY
+
+      - name: Post result to Issue 1
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          {
+            echo "### Source archive LFS inclusion check — run ${{ github.run_id }}"
+            echo
+            echo '```json'
+            cat archive-lfs-result.json 2>/dev/null || echo '{"passed": false, "reason": "result file missing"}'
+            echo '```'
+          } > archive-check-comment.md
+          gh issue comment 1 --body-file archive-check-comment.md
+
+      - name: Fail when source archive still contains pointer
+        if: steps.archive_check.outcome != 'success'
+        run: exit 1
