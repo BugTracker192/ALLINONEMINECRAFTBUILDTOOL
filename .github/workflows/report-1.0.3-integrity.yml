@@ -50,13 +50,7 @@ jobs:
                   size = path.stat().st_size
                   digest = sha256(path)
                   if size != entry['size_bytes'] or digest != entry['sha256']:
-                      mismatches.append({
-                          'path': relative,
-                          'expected_size': entry['size_bytes'],
-                          'actual_size': size,
-                          'expected_sha256': entry['sha256'],
-                          'actual_sha256': digest,
-                      })
+                      mismatches.append({'path': relative, 'expected_size': entry['size_bytes'], 'actual_size': size, 'expected_sha256': entry['sha256'], 'actual_sha256': digest})
               asset_manifest = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text('utf-8'))
               parts = []
               parts_ok = True
@@ -90,23 +84,9 @@ jobs:
                       infos = archive.infolist()
                       bad_member = archive.testzip()
                       archive_members = sum(1 for info in infos if not info.is_dir())
-                      render_relevant = sum(
-                          1 for info in infos
-                          if not info.is_dir() and (
-                              '/blockstates/' in info.filename or
-                              '/models/block/' in info.filename or
-                              '/textures/' in info.filename or
-                              '/atlases/' in info.filename
-                          )
-                      )
+                      render_relevant = sum(1 for info in infos if not info.is_dir() and ('/blockstates/' in info.filename or '/models/block/' in info.filename or '/textures/' in info.filename or '/atlases/' in info.filename))
                   reconstruction = {
-                      'passed': (
-                          rebuilt.stat().st_size == runtime_manifest['size_bytes'] and
-                          digest == runtime_manifest['sha256'] and
-                          archive_members == runtime_manifest['archive_members'] and
-                          render_relevant == runtime_manifest['render_relevant_members'] and
-                          bad_member is None
-                      ),
+                      'passed': rebuilt.stat().st_size == runtime_manifest['size_bytes'] and digest == runtime_manifest['sha256'] and archive_members == runtime_manifest['archive_members'] and render_relevant == runtime_manifest['render_relevant_members'] and bad_member is None,
                       'path': str(rebuilt),
                       'size_bytes': rebuilt.stat().st_size,
                       'sha256': digest,
@@ -116,12 +96,7 @@ jobs:
                       'git_directory_present': (snapshot / '.git').exists(),
                   }
               except Exception as exc:
-                  reconstruction = {
-                      'passed': False,
-                      'error_type': type(exc).__name__,
-                      'error': str(exc),
-                      'traceback': traceback.format_exc(),
-                  }
+                  reconstruction = {'passed': False, 'error_type': type(exc).__name__, 'error': str(exc), 'traceback': traceback.format_exc()}
               finally:
                   os.chdir(old_cwd)
                   if old_cache is None:
@@ -129,22 +104,20 @@ jobs:
                   else:
                       os.environ['MBI_ASSET_CACHE_DIR'] = old_cache
 
-              report = {
-                  'passed': not missing and not extra and not mismatches and parts_ok and reconstruction.get('passed', False),
-                  'version': manifest['version'],
-                  'manifest_file_count': manifest['file_count'],
-                  'actual_release_file_count': len(actual),
-                  'missing': missing,
-                  'extra': extra,
-                  'mismatches': mismatches,
-                  'parts': parts,
-                  'reconstruction': reconstruction,
-              }
+              report = {'passed': not missing and not extra and not mismatches and parts_ok and reconstruction.get('passed', False), 'version': manifest['version'], 'manifest_file_count': manifest['file_count'], 'actual_release_file_count': len(actual), 'missing': missing, 'extra': extra, 'mismatches': mismatches, 'parts': parts, 'reconstruction': reconstruction}
           except Exception as exc:
               report = {'passed': False, 'error': str(exc), 'traceback': traceback.format_exc()}
           Path('report.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', 'utf-8')
           print(Path('report.json').read_text('utf-8'))
           PY
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconstruction-report-${{ github.run_id }}
+          path: report.json
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Post report to pull request
         env:
