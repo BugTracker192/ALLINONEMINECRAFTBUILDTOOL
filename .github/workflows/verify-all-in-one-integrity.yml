@@ -9,116 +9,102 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
-      - name: Check out repository and hydrate Git LFS
+      - name: Check out ordinary Git files only
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           fetch-depth: 1
           show-progress: false
 
-      - name: Verify every release file and bundled asset
+      - name: Verify every 1.0.3 release file and ordinary-Git asset part
         shell: bash
         run: |
-          echo '{"passed": false, "error": "audit did not start"}' > integrity-report.json
           python - <<'PY'
           from pathlib import Path
-          import hashlib, json, zipfile, sys, os, traceback
+          import hashlib, json, sys, traceback
 
+          root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.3')
           report = {'passed': False}
-          try:
-              root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.2')
-              manifest_path = root / 'RELEASE_FILE_MANIFEST.json'
-              manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 
-              expected = {entry['path']: entry for entry in manifest['files']}
+          def sha256(path: Path) -> str:
+              h = hashlib.sha256()
+              with path.open('rb') as stream:
+                  for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          try:
+              release_manifest = json.loads((root / 'RELEASE_FILE_MANIFEST.json').read_text('utf-8'))
+              expected = {entry['path']: entry for entry in release_manifest['files']}
               actual = {
-                  p.relative_to(root).as_posix()
-                  for p in root.rglob('*')
-                  if p.is_file()
+                  path.relative_to(root).as_posix()
+                  for path in root.rglob('*')
+                  if path.is_file()
               }
               expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json'}
-
               missing = sorted(expected_actual - actual)
               extra = sorted(actual - expected_actual)
               mismatches = []
               verified_bytes = 0
 
-              for rel, entry in sorted(expected.items()):
-                  path = root / rel
+              for relative, entry in sorted(expected.items()):
+                  path = root / relative
                   if not path.is_file():
                       continue
                   size = path.stat().st_size
-                  h = hashlib.sha256()
-                  with path.open('rb') as f:
-                      for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
-                          h.update(chunk)
-                  digest = h.hexdigest()
+                  digest = sha256(path)
                   verified_bytes += size
                   if size != entry['size_bytes'] or digest != entry['sha256']:
                       mismatches.append({
-                          'path': rel,
+                          'path': relative,
                           'expected_size': entry['size_bytes'],
                           'actual_size': size,
                           'expected_sha256': entry['sha256'],
                           'actual_sha256': digest,
                       })
 
-              asset = root / 'app/bundled_assets/minecraft.zip'
-              asset_manifest = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text(encoding='utf-8'))
-              h = hashlib.sha256()
-              with asset.open('rb') as f:
-                  for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
-                      h.update(chunk)
-              asset_sha = h.hexdigest()
+              asset_manifest = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text('utf-8'))
+              delivery = asset_manifest['delivery']
+              parts_dir = root / 'app/bundled_assets' / delivery['parts_directory']
+              part_results = []
+              parts_ok = True
+              for index, entry in enumerate(delivery['parts']):
+                  part = parts_dir / entry['name']
+                  exists = part.is_file()
+                  size = part.stat().st_size if exists else None
+                  digest = sha256(part) if exists else None
+                  passed = exists and size == entry['size_bytes'] and digest == entry['sha256']
+                  parts_ok = parts_ok and passed
+                  part_results.append({
+                      'index': index,
+                      'name': entry['name'],
+                      'passed': passed,
+                      'size_bytes': size,
+                      'sha256': digest,
+                  })
 
-              with zipfile.ZipFile(asset) as zf:
-                  infos = zf.infolist()
-                  bad_member = zf.testzip()
-                  archive_members = sum(1 for i in infos if not i.is_dir())
-                  render_relevant = sum(
-                      1 for i in infos
-                      if not i.is_dir() and (
-                          '/blockstates/' in i.filename or
-                          '/models/block/' in i.filename or
-                          '/textures/' in i.filename or
-                          '/atlases/' in i.filename
-                      )
-                  )
-
-              asset_ok = (
-                  asset_sha == asset_manifest['sha256'] and
-                  asset.stat().st_size == asset_manifest['size_bytes'] and
-                  archive_members == asset_manifest['archive_members'] and
-                  render_relevant == asset_manifest['render_relevant_members'] and
-                  bad_member is None
-              )
+              full_pointer = root / 'app/bundled_assets/minecraft.zip'
               report = {
-                  'passed': not missing and not extra and not mismatches and asset_ok,
-                  'manifest_version': manifest['version'],
-                  'manifest_file_count': manifest['file_count'],
+                  'passed': not missing and not extra and not mismatches and parts_ok and not full_pointer.exists(),
+                  'version': release_manifest['version'],
+                  'manifest_file_count': release_manifest['file_count'],
                   'verified_file_count': len(expected),
                   'verified_bytes': verified_bytes,
                   'missing': missing,
                   'extra': extra,
                   'mismatches': mismatches,
-                  'asset': {
-                      'sha256': asset_sha,
-                      'expected_sha256': asset_manifest['sha256'],
-                      'size_bytes': asset.stat().st_size,
-                      'expected_size_bytes': asset_manifest['size_bytes'],
-                      'archive_members': archive_members,
-                      'expected_archive_members': asset_manifest['archive_members'],
-                      'render_relevant_members': render_relevant,
-                      'expected_render_relevant_members': asset_manifest['render_relevant_members'],
-                      'zip_test_bad_member': bad_member,
-                  },
+                  'delivery_mode': delivery['mode'],
+                  'part_count': len(part_results),
+                  'parts': part_results,
+                  'full_lfs_pointer_absent': not full_pointer.exists(),
+                  'expected_asset_size_bytes': asset_manifest['size_bytes'],
+                  'expected_asset_sha256': asset_manifest['sha256'],
               }
           except Exception as exc:
               report = {
@@ -128,29 +114,91 @@ jobs:
                   'traceback': traceback.format_exc(),
               }
 
-          report_text = json.dumps(report, indent=2, sort_keys=True) + '\n'
-          Path('integrity-report.json').write_text(report_text, encoding='utf-8')
-          print(report_text)
-          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as f:
-              f.write('## All-in-one integrity audit\n\n```json\n' + report_text + '```\n')
+          text = json.dumps(report, indent=2, sort_keys=True) + '\n'
+          Path('integrity-report.json').write_text(text, 'utf-8')
+          print(text)
           if not report.get('passed'):
               sys.exit(1)
           PY
 
-      - name: Run autonomous bootstrap textured smoke test
-        working-directory: minecraft-build-intelligence-snowflake-all-in-one-1.0.2
-        run: python BOOTSTRAP_SNOWFLAKE.py --smoke
-
-      - name: Post integrity report to Issue 1
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Simulate extracted Snowflake workspace and reconstruct exact archive
+        shell: bash
         run: |
-          {
-            echo "### GitHub-hosted integrity audit — run ${{ github.run_id }}"
-            echo
-            echo '```json'
-            cat integrity-report.json
-            echo '```'
-          } > audit-comment.md
-          gh issue comment 1 --body-file audit-comment.md
+          rm -rf /tmp/mbi-snowflake-snapshot /tmp/mbi-snowflake-cache
+          mkdir -p /tmp/mbi-snowflake-snapshot
+          cp -a minecraft-build-intelligence-snowflake-all-in-one-1.0.3/. /tmp/mbi-snowflake-snapshot/
+          test ! -e /tmp/mbi-snowflake-snapshot/.git
+          test ! -e /tmp/mbi-snowflake-snapshot/app/bundled_assets/minecraft.zip
+          cd /tmp/mbi-snowflake-snapshot
+          MBI_ASSET_CACHE_DIR=/tmp/mbi-snowflake-cache python - <<'PY'
+          from app.assets.bundled import ensure_bundled_asset, load_bundled_asset_manifest
+          from pathlib import Path
+          import hashlib, json, zipfile
+
+          manifest = load_bundled_asset_manifest()
+          asset = ensure_bundled_asset(verify=True)
+          h = hashlib.sha256()
+          with asset.open('rb') as stream:
+              for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b''):
+                  h.update(chunk)
+          digest = h.hexdigest()
+          with zipfile.ZipFile(asset) as archive:
+              infos = archive.infolist()
+              bad_member = archive.testzip()
+              members = sum(1 for info in infos if not info.is_dir())
+              render_relevant = sum(
+                  1 for info in infos
+                  if not info.is_dir() and (
+                      '/blockstates/' in info.filename or
+                      '/models/block/' in info.filename or
+                      '/textures/' in info.filename or
+                      '/atlases/' in info.filename
+                  )
+              )
+          result = {
+              'passed': (
+                  asset.stat().st_size == manifest['size_bytes'] and
+                  digest == manifest['sha256'] and
+                  members == manifest['archive_members'] and
+                  render_relevant == manifest['render_relevant_members'] and
+                  bad_member is None
+              ),
+              'path': str(asset),
+              'size_bytes': asset.stat().st_size,
+              'sha256': digest,
+              'archive_members': members,
+              'render_relevant_members': render_relevant,
+              'zip_test_bad_member': bad_member,
+              'git_directory_present': Path('.git').exists(),
+          }
+          print(json.dumps(result, indent=2, sort_keys=True))
+          if not result['passed']:
+              raise SystemExit(1)
+          PY
+
+      - name: Run autonomous textured smoke test in extracted snapshot
+        working-directory: /tmp/mbi-snowflake-snapshot
+        env:
+          MBI_ASSET_CACHE_DIR: /tmp/mbi-snowflake-cache
+        run: python BOOTSTRAP_SNOWFLAKE.py --smoke --out /tmp/mbi-snowflake-smoke
+
+      - name: Verify smoke diagnostics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          path = Path('/tmp/mbi-snowflake-smoke/diagnostics.json')
+          value = json.loads(path.read_text('utf-8'))
+          print(json.dumps(value, indent=2, sort_keys=True))
+          if value.get('render_mode') != 'software-textured':
+              raise SystemExit('Smoke run was not software-textured')
+          PY
+
+      - name: Upload machine-readable audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-in-one-1.0.3-integrity-${{ github.run_id }}
+          path: integrity-report.json
+          retention-days: 7
+          if-no-files-found: warn
