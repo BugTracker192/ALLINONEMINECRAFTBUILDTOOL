@@ -63,7 +63,8 @@ jobs:
             git config user.name 'github-actions[bot]' >> repair-report.txt 2>&1
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com' >> repair-report.txt 2>&1
             git add .gitattributes \
-              minecraft-build-intelligence-snowflake-all-in-one-1.0.2/docs/MASTER_SPEC.md \
+              minecraft-build-intelligence-snowflake-all-in-one-1.0.2/docs/MASTER_SPEC.md >> repair-report.txt 2>&1
+            git add -f \
               minecraft-build-intelligence-snowflake-all-in-one-1.0.2/tests/fixtures/reference.schem >> repair-report.txt 2>&1
             echo '--- git status --short ---' >> repair-report.txt
             git status --short >> repair-report.txt 2>&1
