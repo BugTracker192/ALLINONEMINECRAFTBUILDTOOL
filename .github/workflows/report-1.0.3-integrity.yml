@@ -19,12 +19,12 @@ jobs:
           fetch-depth: 1
           show-progress: false
 
-      - name: Generate exact comparison report
+      - name: Generate exact comparison and reconstruction report
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib, json, traceback
+          import hashlib, json, os, shutil, sys, traceback, zipfile
 
           root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.3')
           def sha256(path):
@@ -69,8 +69,68 @@ jobs:
                   passed = exists and size == entry['size_bytes'] and digest == entry['sha256']
                   parts_ok = parts_ok and passed
                   parts.append({'name': entry['name'], 'passed': passed, 'size_bytes': size, 'sha256': digest})
+
+              snapshot = Path('/tmp/mbi-report-snapshot')
+              cache = Path('/tmp/mbi-report-cache')
+              shutil.rmtree(snapshot, ignore_errors=True)
+              shutil.rmtree(cache, ignore_errors=True)
+              shutil.copytree(root, snapshot)
+              reconstruction = {'passed': False}
+              old_cwd = Path.cwd()
+              old_cache = os.environ.get('MBI_ASSET_CACHE_DIR')
+              try:
+                  os.chdir(snapshot)
+                  os.environ['MBI_ASSET_CACHE_DIR'] = str(cache)
+                  sys.path.insert(0, str(snapshot))
+                  from app.assets.bundled import ensure_bundled_asset, load_bundled_asset_manifest
+                  runtime_manifest = load_bundled_asset_manifest()
+                  rebuilt = ensure_bundled_asset(verify=True)
+                  digest = sha256(rebuilt)
+                  with zipfile.ZipFile(rebuilt) as archive:
+                      infos = archive.infolist()
+                      bad_member = archive.testzip()
+                      archive_members = sum(1 for info in infos if not info.is_dir())
+                      render_relevant = sum(
+                          1 for info in infos
+                          if not info.is_dir() and (
+                              '/blockstates/' in info.filename or
+                              '/models/block/' in info.filename or
+                              '/textures/' in info.filename or
+                              '/atlases/' in info.filename
+                          )
+                      )
+                  reconstruction = {
+                      'passed': (
+                          rebuilt.stat().st_size == runtime_manifest['size_bytes'] and
+                          digest == runtime_manifest['sha256'] and
+                          archive_members == runtime_manifest['archive_members'] and
+                          render_relevant == runtime_manifest['render_relevant_members'] and
+                          bad_member is None
+                      ),
+                      'path': str(rebuilt),
+                      'size_bytes': rebuilt.stat().st_size,
+                      'sha256': digest,
+                      'archive_members': archive_members,
+                      'render_relevant_members': render_relevant,
+                      'zip_test_bad_member': bad_member,
+                      'git_directory_present': (snapshot / '.git').exists(),
+                  }
+              except Exception as exc:
+                  reconstruction = {
+                      'passed': False,
+                      'error_type': type(exc).__name__,
+                      'error': str(exc),
+                      'traceback': traceback.format_exc(),
+                  }
+              finally:
+                  os.chdir(old_cwd)
+                  if old_cache is None:
+                      os.environ.pop('MBI_ASSET_CACHE_DIR', None)
+                  else:
+                      os.environ['MBI_ASSET_CACHE_DIR'] = old_cache
+
               report = {
-                  'passed': not missing and not extra and not mismatches and parts_ok,
+                  'passed': not missing and not extra and not mismatches and parts_ok and reconstruction.get('passed', False),
                   'version': manifest['version'],
                   'manifest_file_count': manifest['file_count'],
                   'actual_release_file_count': len(actual),
@@ -78,6 +138,7 @@ jobs:
                   'extra': extra,
                   'mismatches': mismatches,
                   'parts': parts,
+                  'reconstruction': reconstruction,
               }
           except Exception as exc:
               report = {'passed': False, 'error': str(exc), 'traceback': traceback.format_exc()}
@@ -91,7 +152,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           {
-            echo '### Exact 1.0.3 integrity report'
+            echo '### Exact 1.0.3 integrity and reconstruction report'
             echo
             echo '```json'
             cat report.json
