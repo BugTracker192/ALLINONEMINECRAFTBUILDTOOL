@@ -1,0 +1,47 @@
+[build-system]
+requires = []
+build-backend = "build_backend"
+backend-path = ["."]
+
+[project]
+name = "minecraft-build-intelligence"
+version = "1.0.2"
+description = "Offline Minecraft Java build intelligence, CPU rendering, AI tooling, editing, and verified export platform"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {file = "LICENSE"}
+authors = [{name = "Minecraft Build Intelligence contributors"}]
+dependencies = [
+  "numpy>=2.0,<3",
+  "Pillow>=12.3,<13",
+]
+
+[project.optional-dependencies]
+ai = ["httpx>=0.27,<1"]
+security = ["cryptography>=42,<47"]
+test = ["pytest>=8,<10", "hypothesis>=6.100,<7"]
+
+[project.scripts]
+mbi = "app.cli:main"
+
+[tool.setuptools.packages.find]
+where = [".", "services/core/src"]
+include = ["app*", "mbi*"]
+exclude = ["apps*", "packages*", "services.core.tests*"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "services/core/src"]
+testpaths = ["services/core/tests", "tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = [".", "services/core/src"]

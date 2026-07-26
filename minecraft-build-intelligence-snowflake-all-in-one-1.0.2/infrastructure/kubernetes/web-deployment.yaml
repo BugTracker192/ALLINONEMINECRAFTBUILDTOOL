@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: mbi-web, namespace: mbi}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app: mbi-web}}
+  template:
+    metadata: {labels: {app: mbi-web}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: web
+          image: ghcr.io/example/mbi-web:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 8080}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi, ephemeral-storage: 64Mi}
+            limits: {cpu: "1", memory: 512Mi, ephemeral-storage: 256Mi}
+          readinessProbe: {httpGet: {path: /, port: http}, periodSeconds: 5, timeoutSeconds: 2}
+          livenessProbe: {httpGet: {path: /, port: http}, periodSeconds: 20, timeoutSeconds: 2}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: mbi-web, namespace: mbi}
+spec:
+  selector: {app: mbi-web}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: mbi-web, namespace: mbi}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: mbi-web}}

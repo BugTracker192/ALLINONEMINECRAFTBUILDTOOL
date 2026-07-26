@@ -1,0 +1,11 @@
+{
+  "archive_members": 16572,
+  "default_resolution_policy": "auto-discovered unless explicit --resource-pack or MBI_RESOURCE_PACK overrides",
+  "path": "app/bundled_assets/minecraft.zip",
+  "private_user_supplied_asset_bundle": true,
+  "redistribution_notice": "User-supplied Minecraft assets are bundled only in this private deliverable. Do not publish or redistribute them without authorization.",
+  "render_relevant_members": 8092,
+  "schema_version": "1.0",
+  "sha256": "f99aefac7040f85c67b509ebc63a56e542d5f250fd51040d6a3bd7f97e6e5bbc",
+  "size_bytes": 411443953
+}
