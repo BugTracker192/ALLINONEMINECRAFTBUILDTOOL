@@ -39,12 +39,26 @@ def main() -> int:
 
     missing = [requirement for module, requirement in MANDATORY if importlib.util.find_spec(module) is None]
     if missing:
+        if os.environ.get("MBI_BOOTSTRAP_REEXEC") == "1":
+            raise SystemExit(
+                "Mandatory dependencies remain unavailable after installation and interpreter restart: "
+                + ", ".join(missing)
+            )
         wheelhouse = ROOT / "vendor" / "wheelhouse"
         local_wheels = list(wheelhouse.glob("*.whl")) if wheelhouse.is_dir() else []
         if local_wheels:
             run("-m", "pip", "install", "--no-index", "--find-links", str(wheelhouse), *missing)
         else:
             run("-m", "pip", "install", *missing)
+        env = os.environ.copy()
+        env["MBI_BOOTSTRAP_REEXEC"] = "1"
+        completed = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]],
+            cwd=ROOT,
+            env=env,
+            check=False,
+        )
+        return completed.returncode
     from app.assets.bundled import ensure_bundled_asset, load_bundled_asset_manifest
 
     manifest = load_bundled_asset_manifest()

@@ -39,8 +39,8 @@
     },
     {
       "path": "BOOTSTRAP_SNOWFLAKE.py",
-      "sha256": "da6fb69705f50eb3cf990ff61f8d453f84aaadda534c4cae5f82df9a30f57ef0",
-      "size_bytes": 3493
+      "sha256": "f314c34c461acb88683f35cbbd8f9282843f01dc39d9628097769cd15351dd92",
+      "size_bytes": 4037
     },
     {
       "path": "BUILD_REPORT.md",
@@ -124,7 +124,7 @@
     },
     {
       "path": "SOURCE_FILES.sha256",
-      "sha256": "fe7a0fa137a3cb8a287bf038ed4a3e0738b455e50994d89366b7b83e9543c98a",
+      "sha256": "7d777b11350ec36414692e42e56b4e06b68759414947a570f9388ef686d947f5",
       "size_bytes": 28596
     },
     {
@@ -1445,6 +1445,6 @@
   ],
   "profile": "private-snowflake-coco-all-in-one-chunked",
   "schema_version": "1.1",
-  "total_size_bytes": 413013327,
+  "total_size_bytes": 413013871,
   "version": "1.0.3"
 }
