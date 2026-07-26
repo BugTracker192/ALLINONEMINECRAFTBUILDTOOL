@@ -1,1 +1,0 @@
-Create a temporary branch change to this file and open a PR to dispatch the Snowflake-native chunk migration.
