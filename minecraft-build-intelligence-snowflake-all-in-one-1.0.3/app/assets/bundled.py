@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -79,6 +80,19 @@ def _validate(path: Path, manifest: dict[str, Any], *, hash_required: bool = Tru
     return not hash_required or _sha256(path) == str(manifest["sha256"])
 
 
+def _publish_cache_manifest(source_directory: Path, cache_root: Path) -> None:
+    source = source_directory / "ASSET_MANIFEST.json"
+    target = cache_root / "ASSET_MANIFEST.json"
+    if not target.is_file() or target.read_bytes() != source.read_bytes():
+        cache_root.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+        try:
+            shutil.copyfile(source, temporary)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
 def _part_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     delivery = manifest.get("delivery")
     if not isinstance(delivery, dict):
@@ -141,6 +155,8 @@ def ensure_bundled_asset(
     key = (str(directory), str(cache_root))
     resolved = _RESOLVED.get(key)
     if resolved is not None and _validate(resolved, manifest, hash_required=False):
+        if resolved.parent == cache_root:
+            _publish_cache_manifest(directory, cache_root)
         return resolved
 
     filename = str(manifest.get("filename") or Path(str(manifest.get("path", "minecraft.zip"))).name)
@@ -168,12 +184,14 @@ def ensure_bundled_asset(
     cache_root.mkdir(parents=True, exist_ok=True)
     target = cache_root / f"minecraft-{expected_sha}.zip"
     if _validate(target, manifest):
+        _publish_cache_manifest(directory, cache_root)
         _RESOLVED[key] = target
         return target
 
     lock = target.with_suffix(target.suffix + ".lock")
     fd = _acquire_lock(lock, target, manifest)
     if fd is None:
+        _publish_cache_manifest(directory, cache_root)
         _RESOLVED[key] = target
         return target
     os.write(fd, f"pid={os.getpid()}\n".encode("ascii"))
@@ -239,6 +257,7 @@ def ensure_bundled_asset(
                 31,
             )
         os.replace(temporary, target)
+        _publish_cache_manifest(directory, cache_root)
         _RESOLVED[key] = target
         return target
     finally:

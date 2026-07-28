@@ -655,6 +655,7 @@ class SoftwareRenderer:
         axis: str,
         minimum: int,
         maximum: int | None = None,
+        crop: IntBoundingBox | None = None,
         pixels_per_block: int = 8,
         mode: str = "textured",
         issue_coordinates: Mapping[IntVector3, int] | None = None,
@@ -666,7 +667,9 @@ class SoftwareRenderer:
         maximum = minimum if maximum is None else maximum
         if axis not in {"x", "y", "z"} or minimum > maximum:
             raise AppError("SLICE_SPEC_INVALID", "Slice specification is invalid.", exit_code=30)
-        b = self.document.bounds
+        b = self.document.bounds if crop is None else self.document.bounds.intersection(crop)
+        if b is None:
+            raise AppError("RENDER_EMPTY_CROP", "Slice crop does not intersect the build.", exit_code=30)
         if axis == "y":
             width_cells, height_cells = b.dimensions.x, b.dimensions.z
             u_values = range(b.min.x, b.max.x + 1)
@@ -781,6 +784,7 @@ class SoftwareRenderer:
             "max": maximum,
             "ppb": pixels_per_block,
             "mode": diagnostics.render_mode,
+            "crop": {"min": b.min.as_tuple(), "max": b.max.as_tuple()},
             "filters": {
                 "regions": sorted(include_regions_set),
                 "include_states": sorted(include_states_set),
@@ -797,6 +801,7 @@ class SoftwareRenderer:
             "build_version_id": "ver_" + self.document.content_hash[:20],
             "type": "slice",
             "slice": {"axis": axis, "minimum": minimum, "maximum": maximum},
+            "visible_bounds": {"min": list(b.min.as_tuple()), "max": list(b.max.as_tuple())},
             "resolution": [width, height],
             "pixels_per_block": pixels_per_block,
             "coordinate_space": "document",

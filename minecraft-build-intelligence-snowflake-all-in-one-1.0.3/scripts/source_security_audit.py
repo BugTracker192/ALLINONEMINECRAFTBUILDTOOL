@@ -8,8 +8,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / "var/reports/source-security-audit.json"
-EXCLUDED_DIRS = {".git", ".pytest_cache", "node_modules", "dist", "build", "__pycache__", "var"}
-TEXT_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".json", ".yaml", ".yml", ".toml", ".md", ".txt", ".html", ".css", ".sh", ".env"}
+EXCLUDED_DIRS = {
+    ".git",
+    ".hypothesis",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "node_modules",
+    "dist",
+    "build",
+    "__pycache__",
+    "var",
+}
+TEXT_SUFFIXES = {
+    ".py", ".ts", ".tsx", ".js", ".mjs", ".json", ".yaml", ".yml",
+    ".toml", ".md", ".txt", ".html", ".css", ".sh", ".env",
+}
 SECRET_PATTERNS = {
     "private_key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     "openai_key": re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
@@ -46,15 +61,20 @@ def main() -> int:
     for path in files():
         rel = path.relative_to(ROOT).as_posix()
         stat = path.stat()
-        if stat.st_mode & 0o002:
+        # Windows' synthetic POSIX mode bits report writable files as 0o666;
+        # ACLs, not the emulated world-write bit, are authoritative there.
+        if os.name != "nt" and stat.st_mode & 0o002:
             failures.append({"code": "WORLD_WRITABLE", "path": rel})
         if path.is_symlink():
             failures.append({"code": "SYMLINK_IN_SOURCE", "path": rel})
         if path.suffix.lower() in BINARY_DENY:
             failures.append({"code": "BINARY_ARTIFACT", "path": rel})
-        if stat.st_size > 5 * 1024 * 1024:
+        is_hash_locked_asset_part = rel.startswith("app/bundled_assets/parts/minecraft.zip.part")
+        if stat.st_size > 5 * 1024 * 1024 and not is_hash_locked_asset_part:
             failures.append({"code": "OVERSIZED_SOURCE_FILE", "path": rel, "size": stat.st_size})
-        if path.suffix.lower() not in TEXT_SUFFIXES and path.name not in {"Dockerfile", "Makefile", ".gitignore", ".npmrc"}:
+        if path.suffix.lower() not in TEXT_SUFFIXES and path.name not in {
+            "Dockerfile", "Makefile", ".gitignore", ".npmrc",
+        }:
             continue
         scanned += 1
         try:

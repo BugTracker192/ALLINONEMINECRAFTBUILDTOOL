@@ -7547,3 +7547,46 @@ The correct bounded claim is:
 > The autonomous operating manual includes the `1.0.3-p1-interior-perspective` setup, commands, camera model, room-aware workflow, shot presets, occlusion policy, semantic grounding, troubleshooting, verification, and reporting requirements in addition to the pre-existing offline Snowflake/CoCo runbook.
 
 Do not claim that a documentation update alone proves the renderer works. Code tests, a real textured perspective render, semantic grounding, and regression checks remain required.
+
+---
+
+# APPENDIX F — PRODUCTION INTERIOR-VISION REVISION
+
+The `1.0.3-p2-production-interior-vision` revision supersedes bounding-box-only interior targeting. Autonomous agents must use the following policy:
+
+1. Run `interior inspect` or read current `analysis.json`; do not reuse stale room IDs.
+2. Treat classification confidence and purpose labels as heuristic evidence.
+3. Prefer accepted `reachable` physical cameras.
+4. Label elevated cameras as physically valid but potentially unreachable.
+5. Label orbit, wall-off, roof-off, and cutaway images as non-physical evidence.
+6. Reject blocked drafts using their exact quality metrics and rejection reasons.
+7. Preserve functional blocks, supports, opening frames, features, and furnishings in default cutaways.
+8. Use room-bounded plans and slices when perspective evidence is insufficient.
+9. Ground visual claims with semantic maps and exact block queries.
+10. Confirm that the canonical content hash and non-air count did not change during rendering.
+
+Discovery and diagnosis:
+
+```bash
+python -m app.cli interior --help
+python -m app.cli interior inspect RUN_ROOT --room ROOM_ID
+python -m app.cli interior diagnose RUN_ROOT --room ROOM_ID
+```
+
+Production packet:
+
+```bash
+python -m app.cli interior packet RUN_ROOT \
+  --room ROOM_ID \
+  --camera-mode auto \
+  --fallback physical,third-person,cutaway,slices \
+  --shots doorway,corner,feature,coverage \
+  --cutaway-strategy minimal-ray \
+  --slice-fallback always \
+  --quality-profile presentation \
+  --out RUN_ROOT/interior-packets/ROOM_ID
+```
+
+Review `interior_packet.json`, `accepted_views.json`, `camera_rejections.json`, `quality_metrics.json`, and `diagnostics.json` before making a spatial claim. A degraded view is evidence of an unresolved limitation, not an accepted room presentation. `physical_first_person` and `third_person_cutaway` are deliberately separate files so their provenance cannot be confused.
+
+The packet’s exact source `content_hash`, room classification, feature coordinates, camera mode, reachability, cutaway boundary classes, hidden coordinates, metrics, and fallback path are the authoritative evidence record. Every visible perspective and slice pixel remains compatible with `pixel-to-block`; invisible or removed cutaway blocks must be queried from canonical truth instead of inferred.

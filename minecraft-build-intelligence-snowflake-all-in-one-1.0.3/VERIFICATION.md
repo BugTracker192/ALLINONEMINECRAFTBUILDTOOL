@@ -12,7 +12,9 @@ The verifier records commands, return codes, durations, logs, representative evi
 
 ## Current release gates
 
-- `pytest -q`: **80 passed, zero skipped**.
+- Current production-interior branch full suite: `pytest -q` → **81 passed, zero skipped** on Python 3.12.13/Windows.
+- Focused static gates: Ruff passes for the new interior/classification modules; strict mypy passes for those modules.
+- Interior gates include exact component membership, architectural classification, deterministic voxel rays, collision/visibility camera diagnostics, semantic frame metrics, protected cutaways, room-bounded slice hashes, exact packet layout, and CLI contract parsing.
 - Python 3.12 grammar and mandatory import-closure audit.
 - Source-security scan for secrets, unsafe deserialization, shell execution and mandatory dependency leakage.
 - Complete flat and textured Snowflake E2E pipelines.
@@ -34,9 +36,7 @@ The original build-system declaration required downloading `setuptools>=75`, whi
 
 ## Exact Python 3.12 boundary
 
-The current container exposes Python 3.13.5 but no Python 3.12 executable. Outbound runtime download was unavailable. All mandatory files parse under Python 3.12 grammar and CI declares an exact Python 3.12 clean-install/pipeline/test job, but this local report does not mislabel 3.13 execution as the exact 3.12 gate.
-
-The package mirror also exposed no downloadable NumPy/Pillow distributions during the clean-environment attempt. The clean wheel was therefore installed exactly and executed in a fresh venv with the already-tested binary dependencies made available locally. This proves project packaging and isolated execution, while the live dependency-download portion remains an external environment check.
+The production-interior release matrix executed on Python 3.12.13. The clean wheel was installed and executed from an isolated virtual environment outside the source tree. The dependency index was unavailable during that step, so the verifier mounted the already-tested local runtime dependencies and records that qualification in its machine-readable report. Hosted Linux/Python 3.12 CI remains the independent clean-install gate.
 
 No paid provider credentials or Minecraft client executable were available. Provider wire formats were exercised against local HTTP/SSE servers and exports were verified through exact normal re-import. Those facts are stated rather than replaced with unsupported universal claims.
 
@@ -44,3 +44,21 @@ No paid provider credentials or Minecraft client executable were available. Prov
 ## Private all-in-one 1.0.3 update
 
 The exact user-supplied Minecraft asset archive is embedded inside the installable package and auto-selected without configuration. `BOOTSTRAP_SNOWFLAKE.py --smoke` verifies installation, asset integrity, Tier 2 textured rendering, and the reference pipeline. The current suite passes 82/82 tests, and the installed-wheel pipeline passes exact export/re-import verification.
+
+## Production interior-vision release gate
+
+The uninterrupted release verifier at `work/verification-p2/full-release-3/release-verification.json` passed every local gate on Python 3.12.13:
+
+- 81 tests, zero failures or skips.
+- Offline import-closure and source-security audits.
+- Flat and textured end-to-end pipelines.
+- Literal multimodal protocol loops and blank-document AI construction.
+- CPU block-model coverage and 5,000 malformed-input mutations with zero unexpected failures.
+- Flat and textured benchmarks.
+- Two byte-identical pipeline trees containing 195 artifacts.
+- Isolated installed-wheel pipeline and exact export/re-import verification.
+- Resource-pack index of 8,092 assets with zero audit failures.
+
+The built wheel is `minecraft_build_intelligence-1.0.3-py3-none-any.whl`, 408,248,329 bytes, SHA-256 `86c84e11fea4c535fa6a1390808d2dfb7a9c9befd313caa9293fe4ef27dde2a3`.
+
+The Japan lobby benchmark source page was identified, but the static `.schem` download is blocked by the current browser/CDN environment; no benchmark file is committed or redistributed. A deterministic synthetic regression reproduces the same external-feature/terrain-obstruction mechanism and is covered by exact membership, line-of-sight, dominant-surface, retry, cutaway, and slice tests. The legally acquired Japan benchmark remains an explicit unexecuted gate rather than being represented as locally tested.

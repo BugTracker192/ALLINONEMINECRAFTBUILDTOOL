@@ -23,7 +23,7 @@ def _assert_layer_mapping(pixels_per_block: int, reference_schem: Path, tmp_path
 
 
 try:
-    from hypothesis import given, settings, strategies as st
+    from hypothesis import HealthCheck, given, settings, strategies as st
 except ModuleNotFoundError:
     @pytest.mark.parametrize("pixels_per_block", range(1, 17))
     def test_layer_pixel_maps_preserve_y(
@@ -34,10 +34,14 @@ except ModuleNotFoundError:
         _assert_layer_mapping(pixels_per_block, reference_schem, tmp_path)
 else:
     @given(st.integers(min_value=1, max_value=16))
-    @settings(max_examples=24, deadline=None)
+    @settings(
+        max_examples=24,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
     def test_layer_pixel_maps_preserve_y(
-        pixels_per_block: int,
         reference_schem: Path,
         tmp_path: Path,
+        pixels_per_block: int,
     ) -> None:
         _assert_layer_mapping(pixels_per_block, reference_schem, tmp_path)

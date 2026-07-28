@@ -100,6 +100,33 @@ python -m app.cli render ./run --crop 10,20,30,32,24,32 --view isometric_ne --ou
 
 The reusable Python API exposes `app.render.render(...)`, `pixel_to_block(...)`, `block_to_pixel(...)` and exact canonical lookup.
 
+## Production interior evidence
+
+Interior analysis distinguishes designed architectural spaces from natural, terrain, decorative, roof, wall, vegetation, and fluid voids. Camera candidates are checked for exact component membership, collision, clearance, multi-sample voxel line of sight, and semantic frame quality before acceptance.
+
+```bash
+python -m app.cli interior inspect ./run --room ROOM_ID
+python -m app.cli interior diagnose ./run --room ROOM_ID
+
+python -m app.cli interior render ./run \
+  --room ROOM_ID --shot coverage \
+  --camera-mode auto --occlusion physical \
+  --cutaway-strategy minimal-ray \
+  --quality-profile room_coverage \
+  --max-attempts 8 --out ./run/interiors
+
+python -m app.cli interior packet ./run \
+  --room ROOM_ID \
+  --camera-mode auto \
+  --fallback physical,third-person,cutaway,slices \
+  --shots doorway,corner,feature,coverage \
+  --quality-profile presentation \
+  --slice-fallback always \
+  --out ./run/interior-packets/ROOM_ID
+```
+
+A packet contains grounded first-person and explicitly labeled third-person cutaway views, room-bounded plans/slices, candidate and rejection records, quality metrics, exact source hashes, and semantic maps. Cutaway masks are render-only and never change the canonical document. See `docs/architecture/interior-perspective.md`.
+
 ## Transactional edits
 
 ```bash
