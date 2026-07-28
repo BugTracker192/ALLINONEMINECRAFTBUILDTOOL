@@ -40,3 +40,4 @@ No finite test suite proves universal flawlessness across every future mod, reso
 ## Private all-in-one 1.0.3 update
 
 The exact user-supplied Minecraft asset archive is embedded inside the installable package and auto-selected without configuration. `BOOTSTRAP_SNOWFLAKE.py --smoke` verifies installation, asset integrity, Tier 2 textured rendering, and the reference pipeline. The perspective feature patch adds deterministic first-person interior rendering without adding any mandatory dependency. The complete local Python suite passes 90/90 tests, including textured perspective, near-plane clipping, exact semantic grounding, non-destructive cutaways, room camera placement and installed-wheel CLI discovery.
+.
