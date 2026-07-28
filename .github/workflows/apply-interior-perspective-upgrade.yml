@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'tools/apply_perspective_upgrade.py'
+      - 'tools/perspective_payload/**'
       - '.github/perspective-upgrade-trigger'
 
 permissions:
@@ -14,7 +15,7 @@ permissions:
 jobs:
   apply-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Check out feature branch
         uses: actions/checkout@v4
@@ -27,7 +28,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
       - name: Apply deterministic 1.1.0 upgrade
         run: python tools/apply_perspective_upgrade.py
@@ -47,11 +47,57 @@ jobs:
         working-directory: minecraft-build-intelligence-snowflake-all-in-one-1.1.0
         run: pytest -q
 
-      - name: Verify release manifest and Snowflake profile
+      - name: Verify byte-exact release manifest
         working-directory: minecraft-build-intelligence-snowflake-all-in-one-1.1.0
         run: |
-          python scripts/verify_snowflake_release.py --release-root .
-          python scripts/audit_offline_profile.py --output ./perspective-upgrade-audit.json
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+
+          root = Path('.')
+          manifest = json.loads((root / 'RELEASE_FILE_MANIFEST.json').read_text('utf-8'))
+          expected = {entry['path']: entry for entry in manifest['files']}
+          actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
+          expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json'}
+          missing = sorted(expected_actual - actual)
+          extra = sorted(actual - expected_actual)
+          mismatches = []
+          for relative, entry in sorted(expected.items()):
+              path = root / relative
+              if not path.is_file():
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              size = path.stat().st_size
+              if digest != entry['sha256'] or size != entry['size_bytes']:
+                  mismatches.append({'path': relative, 'size': size, 'sha256': digest})
+          report = {
+              'passed': manifest['version'] == '1.1.0' and not missing and not extra and not mismatches,
+              'version': manifest['version'],
+              'file_count': manifest['file_count'],
+              'missing': missing,
+              'extra': extra,
+              'mismatches': mismatches,
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if not report['passed']:
+              raise SystemExit(1)
+          PY
+
+      - name: Audit offline profile and Snowflake bootstrap
+        working-directory: minecraft-build-intelligence-snowflake-all-in-one-1.1.0
+        env:
+          MBI_ASSET_CACHE_DIR: /tmp/mbi-perspective-cache
+        run: |
+          python scripts/audit_offline_profile.py --output /tmp/perspective-upgrade-audit.json
+          python BOOTSTRAP_SNOWFLAKE.py --smoke --out /tmp/mbi-perspective-smoke
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          diagnostics = json.loads(Path('/tmp/mbi-perspective-smoke/diagnostics.json').read_text('utf-8'))
+          if diagnostics.get('render_mode') != 'software-textured':
+              raise SystemExit(f"Expected software-textured, got {diagnostics.get('render_mode')}")
+          print(json.dumps({'render_mode': diagnostics.get('render_mode'), 'render_tier': diagnostics.get('render_tier')}, indent=2))
+          PY
 
       - name: Commit verified upgrade to feature branch
         env:
