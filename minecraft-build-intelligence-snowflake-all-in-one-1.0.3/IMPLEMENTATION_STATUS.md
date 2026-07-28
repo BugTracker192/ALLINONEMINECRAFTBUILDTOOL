@@ -25,7 +25,8 @@ The updated master prompt makes the Python 3.12, local-filesystem, pure-CPU prof
 
 ## Current executed evidence
 
-- **80/80 Python tests pass, zero skips.**
+- **81/81 Python tests pass, zero skips** on Python 3.12.13 in the current Windows release environment.
+- Production interior tests cover designed-space classification, exact seed components, voxel line of sight, camera ranking, room-bounded slices, packet artifacts, perspective grounding, and non-destructive cutaways.
 - Mandatory sources parse using Python 3.12 grammar.
 - Mandatory import closure succeeds with optional/forbidden packages blocked.
 - Flat offline pipeline dynamically passed with the complete artifact layout.
@@ -39,11 +40,15 @@ The updated master prompt makes the Python 3.12, local-filesystem, pure-CPU prof
 
 ## Honest environment boundary
 
-This container has Python 3.13.5 and no Python 3.12 executable. Attempts to obtain Python 3.12 or download NumPy/Pillow from the configured package mirror failed because of environment networking/index availability. Therefore the exact clean Python 3.12 + live PyPI installation gate cannot be certified here. The repository has a Python 3.12 CI workflow, `requires-python = ">=3.12"`, a 3.12 grammar audit and a build backend that no longer depends on fetching setuptools.
-
-This is an external unexecuted certification gate, not a missing product subsystem. The final verdict is recorded in `FINAL_SNOWFLAKE_COMPLIANCE_AUDIT.md`.
+The current production-interior matrix ran on Python 3.12.13. A fresh virtual environment installed and ran the built wheel outside the source tree, but the dependency index was unavailable, so already-tested local NumPy/Pillow packages were mounted for that isolated execution. Hosted Linux/Python 3.12 CI remains the independent clean-install certification gate. The repository also retains the Python 3.12 grammar audit, mandatory import-closure audit, `requires-python = ">=3.12"`, and network-independent build backend.
 
 
 ## Private all-in-one 1.0.3 update
 
 The exact user-supplied Minecraft asset archive is embedded inside the installable package and auto-selected without configuration. `BOOTSTRAP_SNOWFLAKE.py --smoke` verifies installation, asset integrity, Tier 2 textured rendering, and the reference pipeline. The current suite passes 82/82 tests, and the installed-wheel pipeline passes exact export/re-import verification.
+
+## Production interior-vision update
+
+Revision `1.0.3-p2-production-interior-vision` adds scalable enclosed-space classification, exact room and boundary recovery, visibility-aware physical/elevated/orbit cameras, protected minimal cutaways, semantic quality retries, room-bounded slices, and composite evidence packets. Physical reachability and non-physical evidence are labeled separately. The full current suite passes 81/81 in the recorded environment; hosted Linux/Python 3.12 CI remains a separate required gate.
+
+The uninterrupted full verifier additionally passed flat/textured pipelines, provider protocol loops, AI construction from blank, CPU model coverage, 5,000 malformed-input mutations, byte determinism across 195 artifacts, isolated-wheel execution, and an 8,092-entry resource-pack audit with zero failures.

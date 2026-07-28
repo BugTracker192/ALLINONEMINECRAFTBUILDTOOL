@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,7 +22,12 @@ print('offline-import-ok')
 '''
     completed = subprocess.run(
         [sys.executable, "-c", code], cwd=repository, text=True, capture_output=True, check=False,
-        env={"PYTHONPATH": f"{repository}:{repository / 'services/core/src'}"},
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                (str(repository), str(repository / "services/core/src"))
+            ),
+        },
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "offline-import-ok"

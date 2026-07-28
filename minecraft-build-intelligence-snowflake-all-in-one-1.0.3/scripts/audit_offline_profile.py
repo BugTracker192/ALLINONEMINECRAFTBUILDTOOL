@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -49,7 +50,10 @@ import sys
 class BlockOptional:
     def find_spec(self, fullname, path=None, target=None):
         root = fullname.split('.')[0]
-        if root in {'httpx','cryptography','OpenGL','moderngl','playwright','docker','redis','celery','sqlalchemy','psycopg','boto3'}:
+        if root in {
+            'httpx', 'cryptography', 'OpenGL', 'moderngl', 'playwright',
+            'docker', 'redis', 'celery', 'sqlalchemy', 'psycopg', 'boto3',
+        }:
             raise ModuleNotFoundError(f'blocked optional/forbidden dependency: {fullname}', name=root)
         return None
 sys.meta_path.insert(0, BlockOptional())
@@ -60,7 +64,12 @@ print('mandatory-import-closure-ok')
 '''
     completed = subprocess.run(
         [sys.executable, "-c", code], cwd=root, text=True, capture_output=True, check=False,
-        env={"PYTHONPATH": f"{root}:{root / 'services/core/src'}"},
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                (str(root), str(root / "services/core/src"))
+            ),
+        },
     )
     report = {
         "passed": not findings and completed.returncode == 0,

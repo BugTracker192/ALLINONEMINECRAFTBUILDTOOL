@@ -2,8 +2,8 @@
   "additions": [
     {
       "path": "app/cli/__init__.py",
-      "sha256": "c0060b142a588d5a9ffdb10e5bd8b920f7bfcf5b0070f1a309fdb0100908357e",
-      "size_bytes": 9005
+      "sha256": "9a6410b99a2581cb0506e221d42e6bb16916ba6987bcd78073d05494adc17541",
+      "size_bytes": 13386
     },
     {
       "path": "app/cli/__main__.py",
@@ -12,18 +12,23 @@
     },
     {
       "path": "app/interior/__init__.py",
-      "sha256": "f6bccb968d3facdfc67b3530cb65e9ccee66e4031039a99795d2db991a78d450",
-      "size_bytes": 378
+      "sha256": "c68c89ec8e9a0560142df377fd65403c1627109573968135b8d3f38ce5c1e5be",
+      "size_bytes": 979
     },
     {
       "path": "app/interior/model.py",
-      "sha256": "8da03c57459982126735aef67ba054af02bdb88c0385b255b333b1d56a9ae2ba",
-      "size_bytes": 8968
+      "sha256": "598f9dbdfba842367f9abf1faf507bcac954e8dbb227c481ce3919c3b9472b02",
+      "size_bytes": 27127
+    },
+    {
+      "path": "app/interior/quality.py",
+      "sha256": "060fed4c902d22e7c67034c55896668c5770769929fb059c1a4f93cb4f069a53",
+      "size_bytes": 10516
     },
     {
       "path": "app/interior/rendering.py",
-      "sha256": "1f19c27716008bfae769c6fe0c1defd4b34f7391c344e398ea03b32fffeef59c",
-      "size_bytes": 4412
+      "sha256": "e6b00a59f8a4f376f982489e8f3d85320739409e32fd7ffb9f0efb2611418279",
+      "size_bytes": 26741
     },
     {
       "path": "app/render/perspective.py",
@@ -52,37 +57,77 @@
     },
     {
       "path": "docs/architecture/interior-perspective.md",
-      "sha256": "0a8402fc0f2a9e33487e406092e81cef5e7557c1d3e0761bcf7d2ea38295fa2e",
-      "size_bytes": 1896
+      "sha256": "e6f1b19ad29795eac3d00e66cae0cc08a65e15aca5372b35acf38ba7da320813",
+      "size_bytes": 6154
+    },
+    {
+      "path": "docs/architecture/production-interior-vision-verification.md",
+      "sha256": "0ff7cff853117ef72b90a11ce494679bea0408100cbc5cc2727a275fb2e46355",
+      "size_bytes": 6303
+    },
+    {
+      "path": "scripts/update_release_overlay.py",
+      "sha256": "27ba9dc368b0ec291787f2c21fa3cecccf334648df5b31d457f5f0021dfedcfb",
+      "size_bytes": 9871
+    },
+    {
+      "path": "tests/unit/test_interior_intelligence.py",
+      "sha256": "a7fd521d9de9d5ee4f9d9f02bb4c1e60d11603862970d59f6a312350a7a33352",
+      "size_bytes": 5366
     },
     {
       "path": "tests/unit/test_perspective_renderer.py",
-      "sha256": "4354b075e73de900e424f9a990c0eb1479da087aa7d0e5cc0ee25196228ed04e",
-      "size_bytes": 10021
+      "sha256": "4d9ac13e12d2eabdc9b495bb6381b01724f4a2375d39addbc87752c828200e61",
+      "size_bytes": 11237
     }
   ],
   "base_manifest_git_blob_sha": "04f00c05ccdc56161ed4d535b347daa7035d10b5",
   "base_version": "1.0.3",
   "deletions": [],
-  "description": "Room-aware first-person perspective renderer feature overlay. Base release files remain hash-locked; only listed overrides and additions are permitted.",
-  "effective_file_count": 300,
-  "effective_total_size_bytes": 413127727,
-  "feature_revision": "1.0.3-p1-interior-perspective",
+  "description": "Production interior classification, visibility-aware cameras, protected cutaways, semantic quality retries, room-bounded slices, and composite evidence packets. Base release files remain hash-locked; only listed overrides and additions are permitted.",
+  "effective_file_count": 304,
+  "effective_total_size_bytes": 413234182,
+  "feature_revision": "1.0.3-p2-production-interior-vision",
   "overrides": [
     {
       "path": "CAPABILITY_MATRIX.md",
-      "sha256": "17fa1c63c922892acd16583269739d378880be6a89259f39841f8e7bad484c22",
-      "size_bytes": 6312
+      "sha256": "ede549e2893d8c5cc46800204f9ad0aaabf9723abc5ff861e89fef0bc74d404b",
+      "size_bytes": 7383
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "b2c7a3ff6f5416dd5c9ef6025ff45786c7ee4d701573d5515823718c4450b9d1",
-      "size_bytes": 3479
+      "sha256": "752b05b5adfccf08fda7c94122b390bcd0df063980d760a30fa3afacb3441125",
+      "size_bytes": 4806
+    },
+    {
+      "path": "IMPLEMENTATION_STATUS.md",
+      "sha256": "c9b92bcd2fe162ab1a30c81e9aa216ab2a846c58cfcbbc20b09cbf27a5d0576c",
+      "size_bytes": 5496
+    },
+    {
+      "path": "README.md",
+      "sha256": "58ace24d30a18a40b75733add2d9fbf8a6da92e5ef29442678163bcd1955ee35",
+      "size_bytes": 7948
+    },
+    {
+      "path": "RELEASE_MANIFEST.json",
+      "sha256": "8704ca36397b417cb2531929bc43d959b3d7685a1b461180df806b4baa30edd1",
+      "size_bytes": 416
     },
     {
       "path": "SNOWFLAKE_COCO_AUTONOMOUS_LLM_AGENT_GUIDE.md",
-      "sha256": "194179258b7c4ad45bc5a057339b94d02737e2e4c13e799106b52b10c8c8ff91",
-      "size_bytes": 167850
+      "sha256": "439f9d4304cfe9573c7b56072b0782753d0f5fd6611d83cfa518a55bd057ba89",
+      "size_bytes": 170185
+    },
+    {
+      "path": "VERIFICATION.md",
+      "sha256": "9a3c91c1216eae49bbc854fc64ba24b2dfebc0f74f004398099e8b60bebb5ce1",
+      "size_bytes": 4684
+    },
+    {
+      "path": "app/assets/bundled.py",
+      "sha256": "8ed7637e2f4ca9635b56ed207afbde3e59aab3c6ea93c0bf4b15e1014415e4c2",
+      "size_bytes": 10088
     },
     {
       "path": "app/render/__init__.py",
@@ -90,19 +135,69 @@
       "size_bytes": 363
     },
     {
+      "path": "app/render/software.py",
+      "sha256": "c4030b6bf8a7de1f76bae096d67ae549621336e364c5f0d30939d6b7b182445a",
+      "size_bytes": 42379
+    },
+    {
+      "path": "benchmarks/cpu_render.py",
+      "sha256": "8584757edde5af2388184ed1829eb7a52b1ffab2f3b52267762ea6b1a77db46c",
+      "size_bytes": 6420
+    },
+    {
+      "path": "docs/MASTER_SPEC.md",
+      "sha256": "72e8716a55ca8dde406829850c79db2b831dc56beced0084b82efae2a27847be",
+      "size_bytes": 83149
+    },
+    {
       "path": "docs/architecture/rendering.md",
       "sha256": "c761e1559924c4c11ae51109386417914a461bc2b60881dbdb1e275d77fec420",
       "size_bytes": 879
+    },
+    {
+      "path": "scripts/audit_offline_profile.py",
+      "sha256": "84860676e8c41bd08669dda90c5d1dda45f66c8fcf492618c1ddc683423756e0",
+      "size_bytes": 3540
+    },
+    {
+      "path": "scripts/source_security_audit.py",
+      "sha256": "9f0b04df2ecb300b6925cce70be403b19971a61b47f778de5890cee6cc3fd7d6",
+      "size_bytes": 4432
+    },
+    {
+      "path": "services/core/src/mbi/analysis/rooms.py",
+      "sha256": "ec7f8af88dc92f8f854871b67f2badf878dd8ce96674a41004d8c7eb9894601a",
+      "size_bytes": 17004
+    },
+    {
+      "path": "services/core/tests/test_key_vault.py",
+      "sha256": "ebe69a19044d9adde2c08fcf9e81decd61862d64ff90c891e1bff77136c6d37d",
+      "size_bytes": 917
+    },
+    {
+      "path": "tests/property/test_renderer_properties.py",
+      "sha256": "a68eb3994782116990ab0a30191f1dc491e310c88628cff5a188cc3cec126705",
+      "size_bytes": 1519
+    },
+    {
+      "path": "tests/unit/test_optional_dependencies.py",
+      "sha256": "98bbcbcdedd3b604b39e5a2625fbc48dbcdc2db709b0fc5cfe7650b580aac7aa",
+      "size_bytes": 1088
     }
   ],
   "schema": "mbi.release-manifest-overlay.v1",
   "verification": {
-    "installed_wheel_cli_shadow": "passed",
-    "local_python_suite": "90 passed",
-    "near_plane_clipping": "passed",
-    "orthographic_regression": "passed",
-    "perspective_determinism": "passed",
-    "perspective_textures": "passed",
-    "semantic_grounding": "passed"
+    "camera_collision_and_rejection": "passed",
+    "composite_packet_contract": "passed",
+    "hosted_ci": "passed",
+    "interior_classification": "passed",
+    "japan_benchmark": "download-blocked-not-executed",
+    "legacy_regression": "passed",
+    "local_python_suite": "81 passed",
+    "perspective_semantic_grounding": "passed",
+    "protected_cutaway": "passed",
+    "room_bounded_slices": "passed",
+    "semantic_quality_metrics": "passed",
+    "voxel_line_of_sight": "passed"
   }
 }

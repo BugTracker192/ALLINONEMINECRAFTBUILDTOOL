@@ -169,11 +169,46 @@ def test_render_room_executes_true_perspective_pipeline(reference_schem: Path, t
         tmp_path, "room_0", shot="corner", size=(256, 160), occlusion="physical", out=tmp_path / "gallery"
     )
     assert result["projection"] == "perspective"
+    assert result["quality_status"] in {"accepted", "degraded"}
+    assert result["attempt_count"] >= 1
+    assert result["quality"]["visible_coordinate_count"] > 0
     assert Path(result["png"]).is_file()
     manifest = json.loads(Path(result["manifest"]).read_text("utf-8"))
     assert manifest["type"] == "perspective"
     assert manifest["camera"]["position"]
     assert manifest["temporary_visibility_mask"]["coordinate_count"] == 0
+    assert manifest["interior_intelligence"]["room_id"] == "room_0"
+    assert manifest["interior_intelligence"]["quality"]["visible_coordinate_count"] > 0
+
+    packet_root = tmp_path / "packet"
+    packet = interior_rendering.render_room_packet(
+        tmp_path,
+        "room_0",
+        shots=(),
+        size=(160, 100),
+        max_attempts=2,
+        out=packet_root,
+    )
+    assert packet["schema"] == "mbi.interior-packet.v2"
+    for artifact in (
+        "interior_packet.json",
+        "room_summary.json",
+        "camera_candidates.json",
+        "camera_rejections.json",
+        "accepted_views.json",
+        "physical_first_person.png",
+        "physical_first_person.manifest.json",
+        "third_person_cutaway.png",
+        "third_person_cutaway.manifest.json",
+        "top_plan.png",
+        "top_plan.manifest.json",
+        "central_slice_x.png",
+        "central_slice_z.png",
+        "feature_slice.png",
+        "quality_metrics.json",
+        "diagnostics.json",
+    ):
+        assert (packet_root / artifact).is_file()
 
 
 def test_perspective_textures_and_yaw_pitch(reference_schem: Path, tiny_resource_pack: Path, tmp_path: Path) -> None:

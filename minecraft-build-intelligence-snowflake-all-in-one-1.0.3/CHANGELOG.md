@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.3-p2 — 2026-07-29 — production interior vision and evidence packets
+
+- Added scalable enclosed-space classification with architectural, natural, terrain, decorative, roof, wall, vegetation, and fluid evidence scores.
+- Replaced bounding-box-only targeting with exact seed-component membership and architectural boundary classification.
+- Added deterministic 3D voxel ray testing, multi-sample visibility, collision/clearance gates, candidate scoring, rejection diagnostics, and honest reachability labels.
+- Added automatic quality-based retries across physical, elevated, orbit, minimal cutaway, protected wall-off, and roof-off evidence.
+- Added semantic visual-quality profiles with room prominence, terrain, floor/ceiling/wall/feature, dominant surface/material, depth/entropy, edge, foreground, background, and fallback metrics.
+- Added room-bounded slice crops and composite evidence packets with exact source hashes, named perspective views, plan/slices, candidates, rejections, metrics, diagnostics, and semantic maps.
+- Added `interior inspect`, `interior diagnose`, and `interior packet`, plus camera-mode, cutaway-strategy, slice-fallback, quality-profile, and threshold controls.
+- Preserved canonical documents and all legacy render, semantic grounding, patch, export, security, and package contracts.
+
 ## 1.0.3-p1 — 2026-07-28 — room-aware first-person perspective interiors
 
 - Added a deterministic CPU perspective renderer with exact eye position, target or yaw/pitch aiming, vertical FOV and near/far clipping.

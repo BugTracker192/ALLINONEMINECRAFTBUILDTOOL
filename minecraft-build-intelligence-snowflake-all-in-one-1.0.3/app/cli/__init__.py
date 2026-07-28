@@ -79,7 +79,38 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--far", type=float, default=4096.0)
     command.add_argument("--eye-height", type=float, default=1.62)
     command.add_argument("--lighting", default="interior-soft")
-    command.add_argument("--occlusion", choices=("physical", "cutaway", "hybrid"), default="physical")
+    command.add_argument(
+        "--camera-mode",
+        choices=("auto", "physical-first-person", "physical-third-person", "third-person-orbit"),
+        default="auto",
+    )
+    command.add_argument(
+        "--occlusion",
+        choices=("physical", "cutaway", "hybrid", "roof-off", "wall-off"),
+        default="physical",
+    )
+    command.add_argument(
+        "--cutaway-strategy",
+        choices=("minimal-ray", "roof", "wall"),
+        default="minimal-ray",
+    )
+    command.add_argument(
+        "--quality-profile",
+        choices=(
+            "auto",
+            "physical_first_person",
+            "physical_third_person",
+            "feature_closeup",
+            "room_coverage",
+            "third_person_cutaway",
+            "roof_off",
+            "presentation",
+        ),
+        default="auto",
+    )
+    command.add_argument("--min-room-coverage", type=float)
+    command.add_argument("--max-obstruction", type=float)
+    command.add_argument("--max-attempts", type=int, default=8)
     command.add_argument("--name")
     command.add_argument("--out")
 
@@ -94,7 +125,61 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--far", type=float, default=4096.0)
     command.add_argument("--eye-height", type=float, default=1.62)
     command.add_argument("--lighting", default="interior-soft")
-    command.add_argument("--occlusion", choices=("physical", "cutaway", "hybrid"), default="physical")
+    command.add_argument(
+        "--occlusion",
+        choices=("physical", "cutaway", "hybrid", "roof-off", "wall-off"),
+        default="physical",
+    )
+    command.add_argument("--include-non-rooms", action="store_true")
+    command.add_argument("--out")
+
+    for command_name in ("inspect", "diagnose"):
+        command = interior_sub.add_parser(command_name)
+        command.add_argument("run")
+        command.add_argument("--room", required=True)
+
+    command = interior_sub.add_parser("packet")
+    command.add_argument("run")
+    command.add_argument("--room", required=True)
+    command.add_argument("--shots", default="auto,corner,feature")
+    command.add_argument("--resource-pack")
+    command.add_argument("--size", type=LEGACY._size, default=(1280, 800))
+    command.add_argument("--fov", type=float, default=70.0)
+    command.add_argument("--near", type=float, default=0.05)
+    command.add_argument("--far", type=float, default=4096.0)
+    command.add_argument("--eye-height", type=float, default=1.62)
+    command.add_argument("--lighting", default="interior-soft")
+    command.add_argument(
+        "--camera-mode",
+        choices=("auto", "physical-first-person", "physical-third-person", "third-person-orbit"),
+        default="auto",
+    )
+    command.add_argument(
+        "--fallback",
+        default="physical,third-person,cutaway,slices",
+        help="Comma-separated evidence stages.",
+    )
+    command.add_argument(
+        "--occlusion",
+        choices=("physical", "cutaway", "hybrid", "roof-off", "wall-off"),
+        default="physical",
+    )
+    command.add_argument(
+        "--cutaway-strategy",
+        choices=("minimal-ray", "roof", "wall"),
+        default="minimal-ray",
+    )
+    command.add_argument(
+        "--slice-fallback", choices=("auto", "always", "never"), default="auto"
+    )
+    command.add_argument(
+        "--quality-profile",
+        choices=("auto", "third_person_cutaway", "presentation"),
+        default="auto",
+    )
+    command.add_argument("--min-room-coverage", type=float)
+    command.add_argument("--max-obstruction", type=float)
+    command.add_argument("--max-attempts", type=int, default=8)
     command.add_argument("--out")
     return parser
 
@@ -137,19 +222,45 @@ def _perspective_render(args: argparse.Namespace) -> Any:
 
 
 def _interior(args: argparse.Namespace) -> Any:
-    from app.interior import render_gallery, render_room
+    from app.interior import diagnose_room, inspect_room, render_gallery, render_room, render_room_packet
+    if args.interior_command == "inspect":
+        return inspect_room(args.run, args.room)
+    if args.interior_command == "diagnose":
+        return diagnose_room(args.run, args.room)
     if args.interior_command == "render":
         return render_room(
             args.run, args.room, shot=args.shot, resource_pack=args.resource_pack,
             size=args.size, fov=args.fov, near=args.near, far=args.far,
             eye_height=args.eye_height, lighting=args.lighting,
             occlusion=args.occlusion, out=args.out, name=args.name,
+            max_attempts=args.max_attempts,
+            camera_mode=args.camera_mode, cutaway_strategy=args.cutaway_strategy,
+            quality_profile=args.quality_profile,
+            min_room_coverage=args.min_room_coverage,
+            max_obstruction=args.max_obstruction,
+        )
+    if args.interior_command == "packet":
+        return render_room_packet(
+            args.run, args.room,
+            shots=tuple(item for item in args.shots.split(",") if item),
+            resource_pack=args.resource_pack, size=args.size, fov=args.fov,
+            near=args.near, far=args.far, eye_height=args.eye_height,
+            lighting=args.lighting, occlusion=args.occlusion,
+            max_attempts=args.max_attempts, out=args.out,
+            camera_mode=args.camera_mode,
+            fallback=tuple(item for item in args.fallback.split(",") if item),
+            cutaway_strategy=args.cutaway_strategy,
+            slice_fallback=args.slice_fallback,
+            quality_profile=args.quality_profile,
+            min_room_coverage=args.min_room_coverage,
+            max_obstruction=args.max_obstruction,
         )
     room_ids = None if args.rooms == "all" else tuple(item for item in args.rooms.split(",") if item)
     return render_gallery(
         args.run, room_ids=room_ids, shots=tuple(item for item in args.shots.split(",") if item),
         resource_pack=args.resource_pack, size=args.size, fov=args.fov, near=args.near, far=args.far,
         eye_height=args.eye_height, lighting=args.lighting, occlusion=args.occlusion, out=args.out,
+        include_non_rooms=args.include_non_rooms,
     )
 
 
