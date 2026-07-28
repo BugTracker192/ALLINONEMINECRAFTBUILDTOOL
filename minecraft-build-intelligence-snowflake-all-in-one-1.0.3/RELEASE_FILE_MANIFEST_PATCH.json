@@ -2,8 +2,8 @@
   "additions": [
     {
       "path": "app/cli/__init__.py",
-      "sha256": "e0b6463000d19391f2eef31a556f89e5a1c9d4cfccb1489dbfd2dbdd63f620c5",
-      "size_bytes": 8555
+      "sha256": "c0060b142a588d5a9ffdb10e5bd8b920f7bfcf5b0070f1a309fdb0100908357e",
+      "size_bytes": 9005
     },
     {
       "path": "app/cli/__main__.py",
@@ -22,8 +22,8 @@
     },
     {
       "path": "app/interior/rendering.py",
-      "sha256": "7e685b300dbb30eeb4aae88ef2d9514039a7ba2eca21a3b3914aea5b115f1d13",
-      "size_bytes": 4358
+      "sha256": "1f19c27716008bfae769c6fe0c1defd4b34f7391c344e398ea03b32fffeef59c",
+      "size_bytes": 4412
     },
     {
       "path": "app/render/perspective.py",
@@ -65,8 +65,8 @@
   "base_version": "1.0.3",
   "deletions": [],
   "description": "Room-aware first-person perspective renderer feature overlay. Base release files remain hash-locked; only listed overrides and additions are permitted.",
-  "effective_file_count": 300,
-  "effective_total_size_bytes": 413083580,
+  "effective_file_count": 291,
+  "effective_total_size_bytes": 413068533,
   "feature_revision": "1.0.3-p1-interior-perspective",
   "overrides": [
     {
