@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 1
           show-progress: false
 
-      - name: Verify every release file and all ordinary-Git asset parts
+      - name: Verify base release, feature overlay, and ordinary-Git asset parts
         shell: bash
         run: |
           python - <<'PY'
@@ -30,6 +30,7 @@ jobs:
           import hashlib, json
 
           root = Path('minecraft-build-intelligence-snowflake-all-in-one-1.0.3')
+
           def sha256(path):
               h = hashlib.sha256()
               with path.open('rb') as stream:
@@ -37,21 +38,56 @@ jobs:
                       h.update(chunk)
               return h.hexdigest()
 
-          release = json.loads((root / 'RELEASE_FILE_MANIFEST.json').read_text('utf-8'))
+          def git_blob_sha(path):
+              data = path.read_bytes()
+              return hashlib.sha1(b'blob ' + str(len(data)).encode('ascii') + b'\0' + data).hexdigest()
+
+          base_path = root / 'RELEASE_FILE_MANIFEST.json'
+          overlay_path = root / 'RELEASE_FILE_MANIFEST_PATCH.json'
+          release = json.loads(base_path.read_text('utf-8'))
+          overlay = json.loads(overlay_path.read_text('utf-8'))
+          if overlay.get('schema') != 'mbi.release-manifest-overlay.v1':
+              raise SystemExit('Invalid release overlay schema')
+          if overlay.get('base_version') != release.get('version'):
+              raise SystemExit('Release overlay base version mismatch')
+          if overlay.get('base_manifest_git_blob_sha') != git_blob_sha(base_path):
+              raise SystemExit('Release overlay base manifest blob mismatch')
+
           expected = {entry['path']: entry for entry in release['files']}
+          for entry in overlay.get('overrides', []):
+              if entry['path'] not in expected:
+                  raise SystemExit(f"Overlay override is not a base file: {entry['path']}")
+              expected[entry['path']] = entry
+          for entry in overlay.get('additions', []):
+              if entry['path'] in expected:
+                  raise SystemExit(f"Overlay addition already exists in base: {entry['path']}")
+              expected[entry['path']] = entry
+          for relative in overlay.get('deletions', []):
+              if relative not in expected:
+                  raise SystemExit(f'Overlay deletion is not present: {relative}')
+              expected.pop(relative)
+
           actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
-          expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json'}
+          expected_actual = set(expected) | {'RELEASE_FILE_MANIFEST.json', 'RELEASE_FILE_MANIFEST_PATCH.json'}
           missing = sorted(expected_actual - actual)
           extra = sorted(actual - expected_actual)
           mismatches = []
+          actual_total = 0
           for relative, entry in sorted(expected.items()):
               path = root / relative
               if not path.is_file():
                   continue
               size = path.stat().st_size
               digest = sha256(path)
+              actual_total += size
               if size != entry['size_bytes'] or digest != entry['sha256']:
-                  mismatches.append({'path': relative, 'expected_size': entry['size_bytes'], 'actual_size': size, 'expected_sha256': entry['sha256'], 'actual_sha256': digest})
+                  mismatches.append({
+                      'path': relative,
+                      'expected_size': entry['size_bytes'],
+                      'actual_size': size,
+                      'expected_sha256': entry['sha256'],
+                      'actual_sha256': digest,
+                  })
 
           asset = json.loads((root / 'app/bundled_assets/ASSET_MANIFEST.json').read_text('utf-8'))
           parts_dir = root / 'app/bundled_assets' / asset['delivery']['parts_directory']
@@ -61,13 +97,27 @@ jobs:
               exists = path.is_file()
               size = path.stat().st_size if exists else None
               digest = sha256(path) if exists else None
-              parts.append({'index': index, 'name': entry['name'], 'passed': exists and size == entry['size_bytes'] and digest == entry['sha256'], 'size_bytes': size, 'sha256': digest})
+              parts.append({
+                  'index': index,
+                  'name': entry['name'],
+                  'passed': exists and size == entry['size_bytes'] and digest == entry['sha256'],
+                  'size_bytes': size,
+                  'sha256': digest,
+              })
 
           report = {
-              'passed': not missing and not extra and not mismatches and all(item['passed'] for item in parts) and not (root / 'app/bundled_assets/minecraft.zip').exists(),
-              'version': release['version'],
-              'manifest_file_count': release['file_count'],
+              'passed': (
+                  not missing and not extra and not mismatches
+                  and len(expected) == overlay['effective_file_count']
+                  and actual_total == overlay['effective_total_size_bytes']
+                  and all(item['passed'] for item in parts)
+                  and not (root / 'app/bundled_assets/minecraft.zip').exists()
+              ),
+              'base_version': release['version'],
+              'feature_revision': overlay['feature_revision'],
+              'effective_file_count': len(expected),
               'actual_release_file_count': len(actual),
+              'effective_total_size_bytes': actual_total,
               'missing': missing,
               'extra': extra,
               'mismatches': mismatches,
@@ -83,7 +133,7 @@ jobs:
       - name: Create extracted Snowflake-style snapshot
         shell: bash
         run: |
-          rm -rf /tmp/mbi-snowflake-snapshot /tmp/mbi-snowflake-cache /tmp/mbi-snowflake-smoke
+          rm -rf /tmp/mbi-snowflake-snapshot /tmp/mbi-snowflake-cache /tmp/mbi-snowflake-smoke /tmp/mbi-perspective-proof
           mkdir -p /tmp/mbi-snowflake-snapshot
           cp -a minecraft-build-intelligence-snowflake-all-in-one-1.0.3/. /tmp/mbi-snowflake-snapshot/
           test ! -e /tmp/mbi-snowflake-snapshot/.git
@@ -95,6 +145,59 @@ jobs:
         env:
           MBI_ASSET_CACHE_DIR: /tmp/mbi-snowflake-cache
         run: python BOOTSTRAP_SNOWFLAKE.py --smoke --out /tmp/mbi-snowflake-smoke
+
+      - name: Prove textured first-person perspective and semantic grounding
+        working-directory: /tmp/mbi-snowflake-snapshot
+        env:
+          MBI_ASSET_CACHE_DIR: /tmp/mbi-snowflake-cache
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import numpy as np
+          from mbi.importer import import_build
+          from app.assets import open_resource_pack
+          from app.render import PerspectiveCameraSpec, PerspectiveRenderer, block_to_pixel, pixel_to_block
+          from app.render.semantic import load_map
+
+          fixture = Path('tests/fixtures/reference.schem')
+          document = import_build(fixture.read_bytes(), fixture.name)
+          b = document.bounds
+          target = tuple((a + c + 1) / 2.0 for a, c in zip(b.min.as_tuple(), b.max.as_tuple(), strict=True))
+          camera = PerspectiveCameraSpec(
+              position=(target[0] + 8.0, target[1] + 5.0, target[2] - 10.0),
+              target=target,
+              vertical_fov_degrees=68.0,
+              near=0.05,
+          )
+          pack = open_resource_pack(None)
+          try:
+              result = PerspectiveRenderer(document, resource_pack=pack).render(
+                  '/tmp/mbi-perspective-proof', camera=camera, size=(320, 200), mode='textured', name='first_person'
+              )
+          finally:
+              if pack:
+                  pack.close()
+          coordinates = load_map(result.semantic_metadata_path, 'coordinate')
+          ys, xs = np.where(coordinates[..., 0] != np.iinfo(np.int32).min)
+          if not len(xs):
+              raise SystemExit('Perspective proof produced no grounded pixels')
+          px, py = int(xs[0]), int(ys[0])
+          hit = pixel_to_block(result.manifest_path, px, py)
+          if hit is None or {'px': px, 'py': py} not in block_to_pixel(result.manifest_path, *hit['coordinate']):
+              raise SystemExit('Perspective pixel/block grounding failed')
+          report = {
+              'passed': result.manifest['type'] == 'perspective' and result.manifest['render_mode'] == 'software-textured',
+              'type': result.manifest['type'],
+              'render_mode': result.manifest['render_mode'],
+              'camera': result.manifest['camera'],
+              'grounded_pixel': [px, py],
+              'grounded_block': hit,
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if not report['passed']:
+              raise SystemExit(1)
+          PY
 
       - name: Verify reconstructed archive and textured diagnostics
         shell: bash

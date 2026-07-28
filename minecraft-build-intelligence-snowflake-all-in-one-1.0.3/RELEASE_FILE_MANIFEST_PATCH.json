@@ -1,0 +1,103 @@
+{
+  "additions": [
+    {
+      "path": "app/cli/__init__.py",
+      "sha256": "c0060b142a588d5a9ffdb10e5bd8b920f7bfcf5b0070f1a309fdb0100908357e",
+      "size_bytes": 9005
+    },
+    {
+      "path": "app/cli/__main__.py",
+      "sha256": "0472e2ffee01c7582c667fb3eb1ef01023e7d584f175cef8cb475e45e6bd1736",
+      "size_bytes": 45
+    },
+    {
+      "path": "app/interior/__init__.py",
+      "sha256": "f6bccb968d3facdfc67b3530cb65e9ccee66e4031039a99795d2db991a78d450",
+      "size_bytes": 378
+    },
+    {
+      "path": "app/interior/model.py",
+      "sha256": "409b799244be023836f9fb4fb2600dfb3f65a2a7a2d7fc3706a5c48dd98b5c0d",
+      "size_bytes": 8970
+    },
+    {
+      "path": "app/interior/rendering.py",
+      "sha256": "1f19c27716008bfae769c6fe0c1defd4b34f7391c344e398ea03b32fffeef59c",
+      "size_bytes": 4412
+    },
+    {
+      "path": "app/render/perspective.py",
+      "sha256": "7fe528db97af801bcd38704c02471db33167dae29c03bad544fc581bb23a54cd",
+      "size_bytes": 721
+    },
+    {
+      "path": "app/render/perspective_output.py",
+      "sha256": "d7a7eca16bf6ce87dfba274b8abed40013937c6435ad123f82c9177ddd938cc9",
+      "size_bytes": 8581
+    },
+    {
+      "path": "app/render/perspective_primitives.py",
+      "sha256": "9feeda44b4a2ee91e86e401aa82454b19c63add415a1d9498c7eee12bb0d528c",
+      "size_bytes": 9127
+    },
+    {
+      "path": "app/render/perspective_raster.py",
+      "sha256": "4401a9fda48cc0954c486f2bc9103aba40abc3f10572f5cd9a3f2cf36ce9b006",
+      "size_bytes": 6177
+    },
+    {
+      "path": "app/render/perspective_triangles.py",
+      "sha256": "b007f0fefa2bfde9e8f31f60a12b32fd92a5e6fbc4440308361ef955950633ed",
+      "size_bytes": 7641
+    },
+    {
+      "path": "docs/architecture/interior-perspective.md",
+      "sha256": "0a8402fc0f2a9e33487e406092e81cef5e7557c1d3e0761bcf7d2ea38295fa2e",
+      "size_bytes": 1896
+    },
+    {
+      "path": "tests/unit/test_perspective_renderer.py",
+      "sha256": "4354b075e73de900e424f9a990c0eb1479da087aa7d0e5cc0ee25196228ed04e",
+      "size_bytes": 10021
+    }
+  ],
+  "base_manifest_git_blob_sha": "04f00c05ccdc56161ed4d535b347daa7035d10b5",
+  "base_version": "1.0.3",
+  "deletions": [],
+  "description": "Room-aware first-person perspective renderer feature overlay. Base release files remain hash-locked; only listed overrides and additions are permitted.",
+  "effective_file_count": 291,
+  "effective_total_size_bytes": 413068533,
+  "feature_revision": "1.0.3-p1-interior-perspective",
+  "overrides": [
+    {
+      "path": "CAPABILITY_MATRIX.md",
+      "sha256": "17fa1c63c922892acd16583269739d378880be6a89259f39841f8e7bad484c22",
+      "size_bytes": 6312
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "b2c7a3ff6f5416dd5c9ef6025ff45786c7ee4d701573d5515823718c4450b9d1",
+      "size_bytes": 3479
+    },
+    {
+      "path": "app/render/__init__.py",
+      "sha256": "19866d231c1fd08626c4c76bc74a4894446884c2ed5de1890579ebae368c8e3e",
+      "size_bytes": 363
+    },
+    {
+      "path": "docs/architecture/rendering.md",
+      "sha256": "c761e1559924c4c11ae51109386417914a461bc2b60881dbdb1e275d77fec420",
+      "size_bytes": 879
+    }
+  ],
+  "schema": "mbi.release-manifest-overlay.v1",
+  "verification": {
+    "installed_wheel_cli_shadow": "passed",
+    "local_python_suite": "90 passed",
+    "near_plane_clipping": "passed",
+    "orthographic_regression": "passed",
+    "perspective_determinism": "passed",
+    "perspective_textures": "passed",
+    "semantic_grounding": "passed"
+  }
+}

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.3-p1 — 2026-07-28 — room-aware first-person perspective interiors
+
+- Added a deterministic CPU perspective renderer with exact eye position, target or yaw/pitch aiming, vertical FOV and near/far clipping.
+- Added Sutherland–Hodgman camera-depth clipping, perspective-correct texture interpolation, perspective-aware face culling and deterministic z-buffering.
+- Preserved exact coordinate, palette, region, depth, normal, occupancy, changed and issue maps for perspective renders.
+- Added `render --projection perspective` with physical camera controls and non-destructive hidden-coordinate masks.
+- Added `interior render` and `interior gallery`, which default to perspective and select validated walkable eye positions for detected rooms.
+- Added doorway, corner, center, feature, low, upper, coverage and walkthrough shot presets.
+- Added physical, cutaway and hybrid visibility modes, with every temporary hidden block recorded in the render manifest.
+- Added interior-neutral, interior-soft and interior-emissive lighting behavior with controlled emissive-material handling.
+- Preserved all existing orthographic, isometric, crop, slice, pixel/block grounding and export behavior.
+- Added regression, determinism, clipping, textured perspective, camera-placement, cutaway and installed-wheel tests; the complete local suite passes 90/90.
+
 ## 1.0.3 — 2026-07-26 — private all-in-one Snowflake release
 
 - Embedded the exact user-supplied Minecraft asset archive inside the installable `app` package.
