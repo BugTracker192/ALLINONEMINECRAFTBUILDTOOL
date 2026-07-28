@@ -67,8 +67,8 @@
     },
     {
       "path": "scripts/update_release_overlay.py",
-      "sha256": "ba82abe5fd6a4a7593f6835dff992d1fd3e4f4dd8b892ce72e5b1fc6ac135002",
-      "size_bytes": 9612
+      "sha256": "27ba9dc368b0ec291787f2c21fa3cecccf334648df5b31d457f5f0021dfedcfb",
+      "size_bytes": 9871
     },
     {
       "path": "tests/unit/test_interior_intelligence.py",
@@ -86,7 +86,7 @@
   "deletions": [],
   "description": "Production interior classification, visibility-aware cameras, protected cutaways, semantic quality retries, room-bounded slices, and composite evidence packets. Base release files remain hash-locked; only listed overrides and additions are permitted.",
   "effective_file_count": 304,
-  "effective_total_size_bytes": 413233923,
+  "effective_total_size_bytes": 413234182,
   "feature_revision": "1.0.3-p2-production-interior-vision",
   "overrides": [
     {
@@ -189,7 +189,7 @@
   "verification": {
     "camera_collision_and_rejection": "passed",
     "composite_packet_contract": "passed",
-    "hosted_ci": "pending",
+    "hosted_ci": "passed",
     "interior_classification": "passed",
     "japan_benchmark": "download-blocked-not-executed",
     "legacy_regression": "passed",

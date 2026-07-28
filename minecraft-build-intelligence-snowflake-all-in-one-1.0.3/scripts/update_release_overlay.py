@@ -54,7 +54,12 @@ def _entry(path: Path, relative: str, repository: Path) -> dict[str, Any]:
     }
 
 
-def update_overlay(release_root: Path, *, test_count: int) -> dict[str, Any]:
+def update_overlay(
+    release_root: Path,
+    *,
+    test_count: int,
+    hosted_ci_status: str = "pending",
+) -> dict[str, Any]:
     release_root = release_root.resolve()
     repository = Path(_git(release_root, "rev-parse", "--show-toplevel"))
     release_prefix = release_root.relative_to(repository).as_posix() + "/"
@@ -159,7 +164,7 @@ def update_overlay(release_root: Path, *, test_count: int) -> dict[str, Any]:
             "composite_packet_contract": "passed",
             "perspective_semantic_grounding": "passed",
             "legacy_regression": "passed",
-            "hosted_ci": "pending",
+            "hosted_ci": hosted_ci_status,
             "japan_benchmark": "download-blocked-not-executed",
         },
     }
@@ -228,6 +233,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--release-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--test-count", type=int)
+    parser.add_argument(
+        "--hosted-ci-status",
+        choices=("pending", "passed"),
+        default="pending",
+    )
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     if args.check:
@@ -235,7 +245,11 @@ def main() -> int:
         return 0
     if args.test_count is None:
         parser.error("--test-count is required unless --check is used")
-    overlay = update_overlay(args.release_root, test_count=args.test_count)
+    overlay = update_overlay(
+        args.release_root,
+        test_count=args.test_count,
+        hosted_ci_status=args.hosted_ci_status,
+    )
     print(
         json.dumps(
             {
