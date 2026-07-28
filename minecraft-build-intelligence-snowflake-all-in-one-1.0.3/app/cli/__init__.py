@@ -7,6 +7,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Source snapshots keep the canonical core under services/core/src; installed
+# wheels already expose mbi normally. Make both invocation modes deterministic.
+_SOURCE_ROOT = Path(__file__).resolve().parents[2]
+_CORE_SOURCE = _SOURCE_ROOT / "services" / "core" / "src"
+if _CORE_SOURCE.is_dir() and str(_CORE_SOURCE) not in sys.path:
+    sys.path.insert(0, str(_CORE_SOURCE))
+
 from mbi.canonical import IntBoundingBox, IntVector3
 from app.errors import AppError
 from app.project import load_document
@@ -84,6 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--size", type=LEGACY._size, default=(1280, 800))
     command.add_argument("--fov", type=float, default=70.0)
     command.add_argument("--near", type=float, default=0.05)
+    command.add_argument("--far", type=float, default=4096.0)
     command.add_argument("--eye-height", type=float, default=1.62)
     command.add_argument("--lighting", default="interior-soft")
     command.add_argument("--occlusion", choices=("physical", "cutaway", "hybrid"), default="physical")
@@ -140,7 +148,7 @@ def _interior(args: argparse.Namespace) -> Any:
     room_ids = None if args.rooms == "all" else tuple(item for item in args.rooms.split(",") if item)
     return render_gallery(
         args.run, room_ids=room_ids, shots=tuple(item for item in args.shots.split(",") if item),
-        resource_pack=args.resource_pack, size=args.size, fov=args.fov, near=args.near,
+        resource_pack=args.resource_pack, size=args.size, fov=args.fov, near=args.near, far=args.far,
         eye_height=args.eye_height, lighting=args.lighting, occlusion=args.occlusion, out=args.out,
     )
 
