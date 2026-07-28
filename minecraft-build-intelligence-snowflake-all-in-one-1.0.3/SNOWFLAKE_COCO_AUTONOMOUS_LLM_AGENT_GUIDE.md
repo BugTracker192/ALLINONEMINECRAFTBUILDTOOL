@@ -5852,3 +5852,1698 @@ End of autonomous LLM operating manual.
 ## Snowflake snapshot asset reconstruction (v1.0.3)
 
 This release stores the private Minecraft archive as nine hash-locked ordinary Git files under `app/bundled_assets/parts/`. Run `python BOOTSTRAP_SNOWFLAKE.py --smoke`; it reconstructs the exact 411,443,953-byte archive in a writable cache, verifies SHA-256 `f99aefac7040f85c67b509ebc63a56e542d5f250fd51040d6a3bd7f97e6e5bbc`, installs the package, and performs a textured render. No `.git`, remote, Git LFS client, or resource-pack path is required.
+---
+
+# PERSPECTIVE-INTERIOR REVISION ADDENDUM
+## Feature revision `1.0.3-p1-interior-perspective`
+
+> **Authority:** This addendum is part of the autonomous operating manual. It supplements every earlier section without deleting or weakening any existing requirement. Where an older passage discusses only orthographic, isometric, layer, crop, or slice rendering, this addendum adds genuine first-person perspective interior rendering as an additional evidence path.
+>
+> **Applicability check:** This addendum applies when the release contains `app/render/perspective.py`, `app/interior/`, the extended `app.cli` package, and a `RELEASE_FILE_MANIFEST_PATCH.json` whose `feature_revision` is `1.0.3-p1-interior-perspective`.
+
+---
+
+## 28. REVISION SCOPE AND NON-NEGOTIABLE GUARANTEES
+
+The release now supports a genuine software-rendered perspective camera and room-aware first-person interior views. This is not an isometric approximation, a skewed orthographic view, a flat layer, or an external game-engine screenshot.
+
+The perspective implementation provides:
+
+- physical camera position in document-global coordinates;
+- explicit look-at target or yaw/pitch orientation;
+- camera roll;
+- vertical field of view;
+- near and far clipping planes;
+- camera-space polygon clipping;
+- perspective-aware face visibility;
+- a software Z-buffer;
+- perspective-correct texture interpolation using reciprocal depth;
+- existing blockstate/model/texture handling;
+- deterministic output and snapshot IDs;
+- depth, coordinate, palette, region, normal, occupancy, changed, and issue semantic maps;
+- room-aware camera candidate generation;
+- walkable eye-position validation;
+- doorway, corner, center, feature, low, upper, coverage, walkthrough, and automatic shots;
+- physical, cutaway, and hybrid interior visibility modes;
+- render-only hidden-coordinate masks;
+- interior lighting presets and emissive-material handling;
+- one-room rendering and multi-room gallery generation.
+
+The implementation remains:
+
+- offline;
+- CPU-only;
+- deterministic for the same canonical document, resource-pack bytes, camera, filters, lighting, dimensions, and runtime;
+- non-destructive unless a separate validated patch is committed;
+- compatible with the existing orthographic, isometric, crop, layer, slice, semantic-map, analysis, patch, versioning, and export systems.
+
+### 28.1 What perspective rendering does not change
+
+Perspective rendering never changes:
+
+- `canonical.json`;
+- chunk blobs;
+- the active version;
+- source regions;
+- block states;
+- block entities;
+- entities;
+- export results;
+- patch history.
+
+A cutaway or hybrid render hides coordinates only while generating that image. Hidden blocks remain present in the canonical document and in exported schematics.
+
+### 28.2 Evidence rule
+
+A perspective image is visual evidence, not exact symbolic truth by itself. The same grounding rule from the rest of this manual remains mandatory:
+
+```text
+perspective PNG
+→ perspective manifest
+→ semantic pixel lookup
+→ exact coordinate/state query
+→ bounded conclusion or patch
+```
+
+Never infer an exact state from texture color alone. Never describe a hidden coordinate as deleted merely because a cutaway image omitted it.
+
+---
+
+## 29. REQUIRED INSTALLATION AND SOURCE-LAYOUT BEHAVIOR
+
+### 29.1 Always invoke the CLI as a module
+
+Use:
+
+```bash
+python -m app.cli ...
+```
+
+or the installed entry point:
+
+```bash
+mbi ...
+```
+
+Do not invoke `app/cli.py` directly.
+
+The release extends the legacy CLI through the `app.cli` package. The package loads the original command implementation and adds perspective/interior commands. Directly executing the old file can bypass the extension layer.
+
+### 29.2 Source snapshot versus installed wheel
+
+In an unpacked Snowflake/CoCo source snapshot, canonical core code is located at:
+
+```text
+services/core/src/mbi/
+```
+
+The extended CLI adds this path automatically when it exists. An installed wheel exposes `mbi` normally.
+
+An autonomous agent must verify both the source-tree and installed-module paths when certifying a new environment:
+
+```bash
+cd "$REPO_ROOT"
+
+python -m app.cli --help
+python -m app.cli render --help
+python -m app.cli interior --help
+python -m app.cli interior render --help
+python -m app.cli interior gallery --help
+```
+
+After installation, repeat from a directory outside the repository:
+
+```bash
+cd /tmp
+python -m app.cli --help
+python -m app.cli interior --help
+cd "$REPO_ROOT"
+```
+
+### 29.3 Snowflake bootstrap
+
+From the release root:
+
+```bash
+python BOOTSTRAP_SNOWFLAKE.py --smoke
+```
+
+Then verify:
+
+```bash
+python -m app.cli --help
+python -m app.cli render --help
+python -m app.cli interior --help
+```
+
+The smoke bootstrap remains responsible for reconstructing and checking the bundled Minecraft resource archive. Perspective rendering reuses the same validated blockstate/model/texture infrastructure.
+
+### 29.4 Runtime help is authoritative
+
+This manual records the intended feature surface. The parser installed in the current release is the final syntax authority.
+
+Before automation in an unfamiliar snapshot, capture:
+
+```bash
+python -m app.cli render --help > render-help.txt
+python -m app.cli interior render --help > interior-render-help.txt
+python -m app.cli interior gallery --help > interior-gallery-help.txt
+```
+
+If a copied command conflicts with runtime help, correct the command to match runtime help and record the discrepancy. Do not silently omit the requested perspective operation.
+
+---
+
+## 30. PROJECTION SELECTION POLICY
+
+The render command supports:
+
+```text
+--projection auto
+--projection orthographic
+--projection perspective
+```
+
+### `auto`
+
+Use `auto` for general scripts that may receive either an ordinary view preset or a physical camera. Supplying a camera position selects perspective behavior. Without a physical camera, legacy orthographic/isometric behavior remains available.
+
+### `orthographic`
+
+Use orthographic explicitly for:
+
+- global elevations;
+- top and bottom plans;
+- isometric massing review;
+- exact layer-like comparisons;
+- facade alignment;
+- before/after views that must match older snapshots;
+- regression checks against the pre-perspective renderer.
+
+### `perspective`
+
+Use perspective explicitly for:
+
+- interiors;
+- corridors;
+- stairways;
+- door and window sightlines;
+- room-scale composition;
+- first-person circulation review;
+- visual obstruction checks;
+- camera-height experience;
+- showcase views from inside the build.
+
+### Mandatory agent default
+
+For any request containing terms such as:
+
+```text
+interior
+inside
+room
+corridor
+hallway
+walkthrough
+first-person
+eye-level
+doorway view
+standing in
+camera inside
+```
+
+the agent must include at least one perspective render unless the build has no valid interior air space. Orthographic slices may supplement the perspective evidence but must not replace it silently.
+
+---
+
+## 31. MANUAL PERSPECTIVE RENDER COMMAND
+
+The generic render command can create a manually controlled perspective view.
+
+### 31.1 Look-at camera
+
+```bash
+python -m app.cli render RUN_ROOT \
+  --projection perspective \
+  --camera-position 12.5,8.62,-4.5 \
+  --camera-target 18.0,7.5,12.0 \
+  --camera-roll 0 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --size 1280x800 \
+  --mode textured \
+  --lighting interior-soft \
+  --name manual_interior_lookat \
+  --out RUN_ROOT
+```
+
+### 31.2 Yaw/pitch camera
+
+```bash
+python -m app.cli render RUN_ROOT \
+  --projection perspective \
+  --camera-position 12.5,8.62,-4.5 \
+  --camera-yaw 35 \
+  --camera-pitch -6 \
+  --camera-roll 0 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --size 1280x800 \
+  --mode textured \
+  --lighting interior-soft \
+  --name manual_interior_angles \
+  --out RUN_ROOT
+```
+
+Use either:
+
+```text
+camera position + camera target
+```
+
+or:
+
+```text
+camera position + yaw/pitch
+```
+
+Do not provide contradictory orientation definitions unless runtime help explicitly permits a precedence rule. Prefer a target when the exact subject coordinate is known.
+
+### 31.3 Render-only hidden coordinates
+
+A manual cutaway can hide exact coordinates without modifying the build:
+
+```bash
+python -m app.cli render RUN_ROOT \
+  --projection perspective \
+  --camera-position 12.5,8.62,-4.5 \
+  --camera-target 18.0,7.5,12.0 \
+  --hide-coordinate 12,9,-4 \
+  --hide-coordinate 13,9,-4 \
+  --hide-coordinate 14,9,-4 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --size 1280x800 \
+  --mode textured \
+  --lighting interior-soft \
+  --name manual_cutaway \
+  --out RUN_ROOT
+```
+
+`--hide-coordinate` is render-only. Every hidden coordinate must be recorded in the output manifest. Never use it to conceal a structural defect in final physical-view evidence.
+
+### 31.4 Manual camera argument reference
+
+| Argument | Meaning | Autonomous rule |
+|---|---|---|
+| `--projection` | `auto`, `orthographic`, or `perspective` | use explicit `perspective` for interior proof |
+| `--camera-position X,Y,Z` | eye/camera position in document-global floating-point coordinates | place inside navigable air, not inside a solid block |
+| `--camera-target X,Y,Z` | world-space look-at point | preferred when the subject coordinate is known |
+| `--camera-yaw DEG` | horizontal orientation | use with camera position when no target is supplied |
+| `--camera-pitch DEG` | vertical orientation | avoid extreme values unless inspecting ceiling/floor |
+| `--camera-roll DEG` | camera roll | normally `0`; record any artistic/non-level roll |
+| `--fov DEG` | vertical field of view | default interior starting point: `70` |
+| `--near DISTANCE` | near clipping distance | default interior starting point: `0.05` |
+| `--far DISTANCE` | far clipping distance | must be greater than near; `4096` is a safe broad limit |
+| `--hide-coordinate X,Y,Z` | repeatable render-only coordinate mask | use only for documented cutaway evidence |
+| `--size WIDTHxHEIGHT` | output resolution | use landscape for room review unless task requires portrait |
+| `--mode textured|flat` | rendering mode | textured for final interior review |
+| `--lighting PRESET` | lighting preset | use an interior preset for room evidence |
+| `--crop` | coordinate-bounded render scope | use to reduce unrelated geometry and render cost |
+| `--region` | include selected region | repeatable where supported |
+| `--material` | include selected state/material | repeatable where supported |
+| `--hide-material` | hide a material category | document any use in final evidence |
+| `--name` | deterministic artifact stem | use a descriptive room/shot name |
+| `--out` | output directory | keep output inside the intended run/evidence directory |
+
+### 31.5 Camera validity rules
+
+A physical camera is invalid or misleading when:
+
+- its position lies inside a non-air collision block;
+- its target equals its position;
+- `near <= 0`;
+- `far <= near`;
+- FOV is degenerate or excessively distorted;
+- the camera is outside the intended room but described as interior;
+- hidden coordinates remove essential evidence without disclosure;
+- the selected crop excludes the subject;
+- the camera sees only the back side of intentionally culled faces;
+- the position lacks eye/head clearance.
+
+When manual placement fails, use the room-aware interior command before attempting arbitrary coordinate guessing.
+
+---
+
+## 32. ROOM-AWARE INTERIOR COMMANDS
+
+The `interior` command family uses room analysis and the perspective renderer.
+
+Always run analysis first:
+
+```bash
+python -m app.cli analyze RUN_ROOT
+```
+
+Then inspect room data through one or more of:
+
+```text
+analysis.json
+query room
+JSON tool bridge: get_rooms
+JSON tool bridge: get_room
+```
+
+### 32.1 Render one detected room
+
+Current release command form:
+
+```bash
+python -m app.cli interior render RUN_ROOT \
+  --room ROOM_ID \
+  --shot auto \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion physical \
+  --out RUN_ROOT/interior-evidence
+```
+
+When using a specific release snapshot, confirm the room selector spelling with:
+
+```bash
+python -m app.cli interior render --help
+```
+
+### 32.2 Render a room gallery
+
+By default, a gallery may operate over all detected rooms. Omit room filtering unless the task requires a subset:
+
+```bash
+python -m app.cli interior gallery RUN_ROOT \
+  --shots doorway,corner,feature \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion physical \
+  --out RUN_ROOT/interior-gallery
+```
+
+Expanded professional review gallery:
+
+```bash
+python -m app.cli interior gallery RUN_ROOT \
+  --shots doorway,corner,center,feature,coverage \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion hybrid \
+  --out RUN_ROOT/interior-gallery-hybrid
+```
+
+Use runtime help for selected-room filtering:
+
+```bash
+python -m app.cli interior gallery --help
+```
+
+Do not invent room IDs. Read them from current analysis output.
+
+### 32.3 Interior command arguments
+
+| Argument | Meaning | Recommended starting value |
+|---|---|---|
+| `RUN_ROOT` | analyzed canonical run | current intended run |
+| `--room` | one room ID for single-room rendering | exact ID from analysis |
+| `--shots` | comma-separated gallery shot presets | `doorway,corner,feature` |
+| `--shot` | single-room shot preset | `auto` |
+| `--size` | output dimensions | `1280x800` |
+| `--fov` | vertical field of view | `70` |
+| `--near` | near plane | `0.05` |
+| `--far` | far plane | `4096` |
+| `--eye-height` | camera height above selected walkable cell | `1.62` |
+| `--lighting` | interior lighting preset | `interior-soft` |
+| `--occlusion` | `physical`, `cutaway`, or `hybrid` | `physical` first |
+| `--resource-pack` | optional explicit asset source | omit to use bundled assets |
+| `--out` | gallery/evidence output directory | dedicated room evidence directory |
+
+The `far` value must propagate through gallery generation into every room render. When diagnosing an unexpectedly clipped gallery, verify the effective far value in each child manifest.
+
+---
+
+## 33. ROOM DISCOVERY AND WALKABLE CAMERA PLACEMENT
+
+Room-aware rendering consumes the existing air-volume/room analysis. The agent must understand the distinction between:
+
+- exact canonical blocks;
+- heuristic room classification;
+- walkable camera candidates;
+- visual shot scoring.
+
+### 33.1 Room source
+
+Rooms are derived from the analyzed canonical document through enclosed/semi-enclosed air-volume classification. The result is heuristic and can be affected by:
+
+- open roofs;
+- missing doors;
+- very large connected atriums;
+- exterior gaps;
+- partial builds;
+- non-solid/modded collision behavior not represented by the heuristic;
+- narrow crawlspaces;
+- water or fluid volumes.
+
+A missing room classification does not prove that no interior exists. Cross-check layers, slices, and exact blocks.
+
+### 33.2 Walkable cell requirements
+
+A valid ordinary interior camera candidate should have:
+
+- a supporting floor or valid standable surface below;
+- air at the body position;
+- air at the eye/head position;
+- sufficient local clearance;
+- a location inside or immediately at the boundary of the selected room;
+- a useful line of sight toward room features.
+
+Do not place a first-person camera inside a wall merely to obtain a visually convenient image.
+
+### 33.3 Candidate scoring
+
+Automatic shot selection considers room geometry and available features. Candidate quality can include:
+
+- room coverage;
+- distance from walls;
+- visibility of the room center;
+- visibility of openings;
+- visibility of nontrivial feature blocks;
+- avoidance of immediate obstruction;
+- usefulness of the selected shot archetype.
+
+The manifest/report records the selected camera and candidate count. A high candidate count does not guarantee artistic quality. Inspect the resulting image.
+
+### 33.4 Crop behavior
+
+Room rendering uses a room-bounded crop with limited surrounding padding. This:
+
+- reduces unrelated exterior geometry;
+- improves performance;
+- preserves enough boundary context for walls, openings, and nearby structure.
+
+If a feature lies just outside the automatic crop, use a manual perspective render with an explicit crop or a broader room-context render.
+
+---
+
+## 34. SHOT PRESET REFERENCE
+
+### `auto`
+
+Selects the highest-scoring generally useful room view.
+
+Use for:
+
+- first-pass room review;
+- unknown room geometry;
+- automation with a strict image budget.
+
+Do not rely on `auto` alone for final interior certification.
+
+### `doorway`
+
+Places or favors the camera near an opening and aims into the room.
+
+Use for:
+
+- entry experience;
+- door clearance;
+- first impression;
+- room connectivity;
+- checking whether doors lead to usable space.
+
+Failure modes:
+
+- opening not detected;
+- camera just outside the intended volume;
+- door leaf or wall blocks most of the view;
+- connected atrium treated as one volume.
+
+### `corner`
+
+Places the camera near a room corner and aims across the space.
+
+Use for:
+
+- maximum room coverage;
+- furniture/layout review;
+- wall/ceiling/floor relationships;
+- visual depth.
+
+Failure modes:
+
+- corner blocked by furniture;
+- very narrow rooms;
+- immediate near-plane clipping against the wall.
+
+### `center`
+
+Places the camera near a central walkable position.
+
+Use for:
+
+- symmetry;
+- central focal points;
+- dome/ceiling review;
+- radial rooms.
+
+Failure modes:
+
+- center occupied;
+- central camera produces weak composition;
+- room is too small for a wide view.
+
+### `feature`
+
+Targets an identified feature block or feature cluster.
+
+Use for:
+
+- fireplaces;
+- altars;
+- stages;
+- machinery;
+- decorated walls;
+- focal furniture;
+- unique interior assets.
+
+Failure modes:
+
+- heuristic feature is not semantically important;
+- target is hidden behind another object;
+- feature lies outside the room classification.
+
+### `low`
+
+Uses a lower camera-height/composition bias.
+
+Use for:
+
+- imposing vertical scale;
+- stairs;
+- tall halls;
+- low-angle presentation evidence.
+
+Do not use as the only accessibility or navigation proof.
+
+### `upper`
+
+Uses a higher camera-height/composition bias where clearance permits.
+
+Use for:
+
+- large halls;
+- mezzanines;
+- upper-wall decoration;
+- broad layout overview.
+
+Do not place above a valid standing volume and call it a player-eye view unless the task explicitly allows an elevated camera.
+
+### `coverage`
+
+Prioritizes visibility of a large portion of the room.
+
+Use for:
+
+- systematic review;
+- QA galleries;
+- comparing room completeness;
+- detecting empty or unfinished zones.
+
+### `walkthrough`
+
+Produces or selects a sequence-oriented circulation view.
+
+Use for:
+
+- corridor progression;
+- entrance-to-feature experience;
+- route continuity;
+- presentation sequences.
+
+A walkthrough shot is still a static render unless a separate sequence is assembled. Do not describe it as interactive video.
+
+### Shot-set minimums
+
+For a meaningful room:
+
+```text
+doorway + corner + feature
+```
+
+For final interior QA:
+
+```text
+doorway + corner + center + feature + coverage
+```
+
+For circulation-heavy tasks:
+
+```text
+doorway + walkthrough + coverage
+```
+
+---
+
+## 35. OCCLUSION AND CUTAWAY POLICY
+
+Interior rendering supports:
+
+```text
+physical
+cutaway
+hybrid
+```
+
+### 35.1 `physical`
+
+No structural coordinates are hidden for camera convenience.
+
+Use as the first and primary evidence mode.
+
+A physical render answers:
+
+- what a camera at this position can actually see;
+- whether a wall, column, door, furnishing, or ceiling blocks the view;
+- whether the room composition works from a plausible interior position.
+
+### 35.2 `cutaway`
+
+Hides a calculated set of obstructing coordinates for the render only.
+
+Use for:
+
+- inspecting a room that cannot be adequately photographed physically;
+- exposing wall thickness;
+- showing an interior from a useful external angle;
+- documenting hidden layout relationships;
+- debugging room classification or camera placement.
+
+Every cutaway report must disclose:
+
+- `occlusion: cutaway`;
+- hidden coordinate count;
+- hidden coordinate set or mask reference;
+- camera;
+- crop;
+- room ID;
+- shot.
+
+Never submit only a cutaway image as proof of physical first-person experience.
+
+### 35.3 `hybrid`
+
+Starts from room-aware physical framing and permits limited cutaway behavior where obstruction prevents useful evidence.
+
+Use for:
+
+- dense interiors;
+- cramped rooms;
+- partial builds;
+- rooms with thick boundary geometry;
+- professional gallery coverage after physical evidence exists.
+
+A hybrid image must be labeled hybrid. It is not equivalent to an unobstructed in-game camera.
+
+### 35.4 Required sequence
+
+For final room review:
+
+```text
+physical first
+→ inspect obstruction
+→ hybrid if needed
+→ cutaway only for unresolved hidden relationships
+```
+
+### 35.5 Non-destructive proof
+
+To prove no mutation occurred:
+
+1. Record active version/content hash before rendering.
+2. Generate physical/cutaway/hybrid images.
+3. Re-read active version/content hash.
+4. Confirm no patch or version transition occurred.
+5. Confirm exported/canonical block counts are unchanged.
+
+---
+
+## 36. INTERIOR LIGHTING AND EMISSIVE MATERIALS
+
+Perspective rasterization supports interior-oriented lighting presets, including:
+
+```text
+interior-soft
+interior-neutral
+interior-emissive
+```
+
+Runtime help and renderer diagnostics remain authoritative for accepted names.
+
+### `interior-soft`
+
+Recommended default for readable evidence:
+
+- balanced fill;
+- visible midtones;
+- reduced black clipping;
+- suitable for room QA and agent vision.
+
+### `interior-neutral`
+
+Use for:
+
+- material comparison;
+- less stylized evidence;
+- before/after consistency;
+- detecting geometry rather than atmosphere.
+
+### `interior-emissive`
+
+Use when:
+
+- lamps, lanterns, glow blocks, screens, or emissive materials are central to the review;
+- the task specifically asks to inspect luminous accents.
+
+Emissive rendering is a visual approximation, not exact Minecraft light propagation. The existing lighting analysis remains heuristic. Never claim exact block-light levels from the perspective image.
+
+### Lighting evidence minimum
+
+For a lighting-sensitive room, inspect:
+
+1. `interior-neutral` or `interior-soft`;
+2. `interior-emissive`;
+3. lighting analysis output;
+4. exact emitter states and positions;
+5. relevant floor/ceiling slices.
+
+---
+
+## 37. PERSPECTIVE SEMANTIC GROUNDING
+
+Perspective renders preserve the semantic map contract.
+
+A perspective manifest must identify its projection/type and include enough camera metadata to reproduce the view, including:
+
+- camera position;
+- target and/or effective orientation;
+- yaw;
+- pitch;
+- roll;
+- vertical FOV;
+- near plane;
+- far plane;
+- camera basis;
+- frustum corner rays;
+- crop;
+- output dimensions;
+- resource-pack/render mode;
+- lighting preset;
+- hidden-coordinate visibility mask or count;
+- deterministic snapshot ID;
+- semantic-map references.
+
+### 37.1 Frontmost semantics
+
+The coordinate map records the frontmost visible canonical block at each occupied pixel after:
+
+- camera transformation;
+- clipping;
+- face visibility;
+- Z-buffer resolution;
+- render-only hidden-coordinate filtering.
+
+A block hidden by another block will not appear in the frontmost coordinate map. Use exact box/chunk queries for occluded geometry.
+
+### 37.2 Perspective-correct interpolation
+
+Texture coordinates and depth-sensitive attributes are interpolated with reciprocal camera depth. This prevents affine texture warping on receding faces.
+
+The agent need not recompute rasterization mathematics, but it must distinguish this from legacy orthographic projection when comparing images.
+
+### 37.3 Pixel workflow
+
+```bash
+python -m app.cli pixel-to-block PERSPECTIVE_MANIFEST --px PX --py PY
+```
+
+Then:
+
+```bash
+python -m app.cli query block RUN_ROOT --x X --y Y --z Z --json
+```
+
+For nearby context:
+
+```bash
+python -m app.cli query box RUN_ROOT \
+  --min=X1,Y1,Z1 \
+  --max=X2,Y2,Z2 \
+  --json
+```
+
+### 37.4 Block visibility workflow
+
+```bash
+python -m app.cli block-to-pixel PERSPECTIVE_MANIFEST --x X --y Y --z Z
+```
+
+No returned frontmost pixels does not prove the block is absent. It may be:
+
+- outside the frustum;
+- outside the crop;
+- behind another block;
+- beyond near/far;
+- back-face culled;
+- hidden by the render-only mask;
+- too small to cover a sampled pixel.
+
+---
+
+## 38. AUTONOMOUS INTERIOR OPERATING PROCEDURE
+
+Use this complete sequence for any imported build with occupiable interiors.
+
+### Phase 1 — establish canonical truth
+
+```bash
+python -m app.cli import INPUT --out RUN_ROOT
+python -m app.cli analyze RUN_ROOT
+python -m app.cli snapshot RUN_ROOT \
+  --views global,layers,slices \
+  --size 768x768 \
+  --out RUN_ROOT
+```
+
+Inspect:
+
+- canonical bounds;
+- regions;
+- room analysis;
+- navigation analysis;
+- floors;
+- global views;
+- representative slices.
+
+### Phase 2 — enumerate rooms
+
+Use `analysis.json` or the JSON tool bridge:
+
+```json
+{
+  "tool": "get_rooms",
+  "arguments": {}
+}
+```
+
+For each intended room, record:
+
+```text
+room ID
+bounds
+volume
+opening/doorway evidence
+floor level
+navigation connection
+candidate interior purpose
+known feature coordinates
+```
+
+### Phase 3 — generate a physical gallery
+
+```bash
+python -m app.cli interior gallery RUN_ROOT \
+  --shots doorway,corner,feature \
+  --size 960x600 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion physical \
+  --out RUN_ROOT/interior-gallery-physical
+```
+
+Use draft resolution first for large builds.
+
+### Phase 4 — inspect gallery report
+
+Read:
+
+```text
+interior-gallery.json
+```
+
+For every output, inspect:
+
+- room ID;
+- shot;
+- camera;
+- room bounds;
+- crop bounds;
+- candidate count;
+- occlusion mode;
+- hidden coordinate count;
+- PNG path;
+- manifest path;
+- snapshot ID;
+- diagnostics.
+
+Reject empty, wall-filled, or irrelevant views. Do not treat generated quantity as quality.
+
+### Phase 5 — ground visual findings
+
+For each defect:
+
+1. cite snapshot ID;
+2. identify representative pixel;
+3. resolve pixel to coordinate;
+4. query exact block;
+5. query nearby box;
+6. inspect relevant slice;
+7. classify structural versus decorative issue.
+
+### Phase 6 — recover poor physical views
+
+Use this order:
+
+1. another shot preset;
+2. lower or higher eye height within plausible clearance;
+3. narrower crop or manual target;
+4. wider but reasonable FOV;
+5. reduced near plane if immediate geometry clips;
+6. hybrid occlusion;
+7. cutaway evidence;
+8. manual perspective camera.
+
+Do not jump directly to hiding walls.
+
+### Phase 7 — plan interior edits
+
+Separate patches by concern:
+
+```text
+circulation
+door/window alignment
+floor/ceiling correction
+structural supports
+room division
+lighting
+furnishing
+focal feature
+material variation
+micro-detail
+```
+
+Every patch remains bounded and previewed.
+
+### Phase 8 — preview from the same camera
+
+For a valid before/after comparison, preserve:
+
+- projection;
+- camera position;
+- orientation/target;
+- FOV;
+- near/far;
+- crop;
+- output size;
+- lighting;
+- resource-pack bytes;
+- occlusion mode;
+- hidden-coordinate mask.
+
+A changed camera can make an inferior edit appear better.
+
+### Phase 9 — commit and re-render
+
+After commit:
+
+```text
+re-render changed room using same camera
+→ render at least one alternate physical shot
+→ regenerate relevant slice
+→ re-run room/navigation/lighting/consistency analysis
+```
+
+### Phase 10 — final room certification
+
+For every required room, confirm:
+
+- a valid physical doorway or corner view exists;
+- camera is inside plausible navigable air;
+- floor and headroom are usable;
+- room has a purpose or intentionally empty function;
+- openings connect correctly;
+- windows correspond to interior space;
+- lighting has been reviewed;
+- no critical geometry is visible only in cutaway mode;
+- semantic evidence exists for major claims;
+- final active version is recorded.
+
+---
+
+## 39. ZONE-5 / LARGE-BUILD COMMAND RECIPES
+
+Replace the run path with the actual imported/analyzed run.
+
+### 39.1 First-pass physical gallery
+
+```bash
+python -m app.cli interior gallery /tmp/mbi-run/zone5 \
+  --shots doorway,corner,feature \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion physical \
+  --out /workspace/zone5-interior-perspective-gallery
+```
+
+### 39.2 Expanded QA gallery
+
+```bash
+python -m app.cli interior gallery /tmp/mbi-run/zone5 \
+  --shots doorway,corner,center,feature,coverage \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-neutral \
+  --occlusion physical \
+  --out /workspace/zone5-interior-qa-gallery
+```
+
+### 39.3 Hybrid recovery gallery
+
+```bash
+python -m app.cli interior gallery /tmp/mbi-run/zone5 \
+  --shots doorway,corner,feature,coverage \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion hybrid \
+  --out /workspace/zone5-interior-hybrid-gallery
+```
+
+### 39.4 Single-room evidence
+
+```bash
+python -m app.cli interior render /tmp/mbi-run/zone5 \
+  --room ROOM_ID \
+  --shot doorway \
+  --size 1536x960 \
+  --fov 68 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion physical \
+  --out /workspace/zone5-room-ROOM_ID
+```
+
+### 39.5 Manual feature target
+
+```bash
+python -m app.cli render /tmp/mbi-run/zone5 \
+  --projection perspective \
+  --camera-position X,Y,Z \
+  --camera-target TX,TY,TZ \
+  --camera-roll 0 \
+  --fov 68 \
+  --near 0.05 \
+  --far 4096 \
+  --size 1536x960 \
+  --mode textured \
+  --lighting interior-soft \
+  --name zone5_manual_feature \
+  --out /workspace/zone5-manual-evidence
+```
+
+### 39.6 Presentation render
+
+Only after draft evidence is approved:
+
+```bash
+python -m app.cli interior render /tmp/mbi-run/zone5 \
+  --room ROOM_ID \
+  --shot feature \
+  --size 2048x1280 \
+  --fov 65 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-emissive \
+  --occlusion physical \
+  --out /workspace/zone5-presentation
+```
+
+---
+
+## 40. TROUBLESHOOTING PERSPECTIVE AND INTERIOR RENDERS
+
+### `No rooms found`
+
+Required response:
+
+1. confirm `analyze` ran on the intended run;
+2. inspect `analysis.json`;
+3. verify the build contains enclosed or semi-enclosed air;
+4. inspect central slices;
+5. check whether an exterior opening merges the room with outside air;
+6. use a manual perspective camera if the room heuristic cannot classify the space;
+7. report the heuristic limitation.
+
+Do not fabricate a room ID.
+
+### `Unknown room ID`
+
+- reload current analysis;
+- do not reuse IDs from another run/version;
+- check whether edits changed room topology;
+- regenerate room analysis after structural patches.
+
+### Camera inside wall or object
+
+- select `auto`, `doorway`, or another candidate;
+- reduce eye height only within plausible player clearance;
+- inspect exact blocks around the camera;
+- use a nearby walkable cell;
+- do not hide the containing wall and continue describing the camera as physical.
+
+### Image is almost entirely a wall
+
+Use this order:
+
+1. `doorway`;
+2. `corner`;
+3. `coverage`;
+4. hybrid;
+5. cutaway;
+6. manual camera.
+
+Also verify near plane and room crop.
+
+### Near-plane clipping
+
+Symptoms:
+
+- nearby face disappears;
+- geometry is sliced abruptly;
+- only distant surfaces remain.
+
+Actions:
+
+- move camera away from the wall;
+- reduce `near` cautiously;
+- choose another candidate;
+- inspect camera position and local blocks.
+
+Never set near to zero.
+
+### Far-plane clipping
+
+Symptoms:
+
+- distant room end disappears;
+- long corridor terminates abruptly;
+- gallery and single-room results disagree.
+
+Actions:
+
+- raise `far`;
+- verify `far > near`;
+- verify gallery propagated `far` into child renders;
+- inspect child manifests.
+
+### Black or unreadably dark interior
+
+- use `interior-soft`;
+- compare with `interior-neutral`;
+- confirm bundled resource pack loaded;
+- inspect renderer diagnostics;
+- identify unsupported models/textures;
+- compare exact light-emitter blocks;
+- do not claim exact darkness from the image alone.
+
+### Extreme fisheye distortion
+
+- reduce FOV;
+- move camera backward if room permits;
+- use corner/doorway placement instead of an excessively wide lens;
+- use approximately `60–75` degrees for ordinary evidence.
+
+### Empty image
+
+Check:
+
+- crop intersects canonical bounds;
+- camera points toward the build;
+- target differs from position;
+- near/far are valid;
+- material/region filters are not excluding everything;
+- hidden-coordinate mask is not excessive;
+- room bounds are current.
+
+### Wrong room or wrong feature
+
+- inspect room ID and bounds;
+- inspect chosen shot and target;
+- query feature coordinates;
+- switch to manual target;
+- regenerate analysis after major edits.
+
+### Textures appear stretched or incorrect
+
+- confirm perspective projection is active;
+- confirm the perspective renderer, not an older flat transform, created the manifest;
+- inspect unsupported model and fallback diagnostics;
+- verify resource-pack hash;
+- compare a known vanilla block;
+- use strict textures on a bounded vanilla crop when diagnosing coverage.
+
+### Cutaway removed too much
+
+- use physical or hybrid;
+- reduce manual hidden coordinates;
+- inspect hidden-coordinate count;
+- compare canonical block count before/after to prove non-mutation;
+- create a narrower crop rather than hiding more structure.
+
+### Gallery is too expensive
+
+- reduce size to `640x400` or `960x600`;
+- reduce shot set;
+- select priority rooms;
+- use physical first;
+- render presentation resolution only for approved views;
+- avoid generating every preset for every minor cavity.
+
+### Orthographic regression suspected
+
+Run the same legacy command with:
+
+```text
+--projection orthographic
+```
+
+Then compare against the previous deterministic artifact using identical:
+
+- camera preset;
+- size;
+- crop;
+- filters;
+- pack;
+- lighting;
+- runtime.
+
+Perspective additions must not alter legacy orthographic output unexpectedly.
+
+---
+
+## 41. PERSPECTIVE VERIFICATION MATRIX
+
+A release or environment must not be described as perspective-certified until the applicable checks execute successfully.
+
+### 41.1 Parser and packaging
+
+```bash
+python -m app.cli --help
+python -m app.cli render --help
+python -m app.cli interior --help
+python -m app.cli interior render --help
+python -m app.cli interior gallery --help
+```
+
+Repeat after wheel installation from outside the source tree.
+
+### 41.2 Camera geometry
+
+Verify:
+
+- look-at basis is finite and orthonormal within tolerance;
+- yaw/pitch produces a valid forward vector;
+- camera position and target cannot collapse;
+- FOV is validated;
+- near/far are validated;
+- frustum rays are deterministic.
+
+### 41.3 Clipping
+
+Test triangles:
+
+- entirely before near;
+- crossing near;
+- entirely after far;
+- crossing far;
+- crossing both;
+- with interpolated UV/world coordinates.
+
+### 41.4 Rasterization
+
+Verify:
+
+- Z-buffer resolves frontmost surface;
+- perspective-correct UV interpolation;
+- deterministic textured output;
+- deterministic flat output;
+- alpha/cutout behavior remains bounded;
+- semantic maps match frontmost geometry.
+
+### 41.5 Interior model
+
+Verify:
+
+- room loading;
+- room selection by ID;
+- walkable cells;
+- eye clearance;
+- doorway/opening discovery;
+- feature targeting;
+- all shot presets return valid or explicit failure;
+- cutaway mask does not mutate the document;
+- gallery forwards FOV, near, far, eye height, lighting, and occlusion.
+
+### 41.6 Semantic grounding
+
+For a known fixture:
+
+1. render perspective;
+2. find an occupied pixel;
+3. resolve pixel to coordinate;
+4. query state;
+5. verify palette ID/state agreement;
+6. block-to-pixel lookup returns that pixel where frontmost.
+
+### 41.7 Determinism
+
+Render twice with identical inputs and compare:
+
+- PNG SHA-256;
+- manifest SHA-256;
+- semantic binary maps;
+- metadata;
+- snapshot ID.
+
+Use the same Pillow/zlib runtime for byte-identical PNG certification.
+
+### 41.8 Regression
+
+Run existing orthographic/isometric/slice tests and compare expected outputs. Perspective certification is invalid if it breaks mandatory legacy paths.
+
+### 41.9 Recommended test commands
+
+```bash
+python BOOTSTRAP_SNOWFLAKE.py --smoke
+python -m pip install '.[test]'
+pytest -q
+```
+
+When the perspective-specific test file is present:
+
+```bash
+pytest -q tests/unit/test_perspective_renderer.py
+```
+
+Then execute one real textured perspective render and one interior gallery against a known fixture or imported build.
+
+### 41.10 CI honesty rule
+
+A GitHub Actions job that never starts, has no steps, or is blocked by billing is not a passing test and is not a failing code execution. Report it separately as an unexecuted CI gate.
+
+Local or independent tests may establish code confidence, but do not claim a green hosted workflow until the workflow actually runs and finishes successfully.
+
+---
+
+## 42. PERFORMANCE AND IMAGE-BUDGET POLICY
+
+Perspective rendering costs scale with:
+
+- visible block faces;
+- model triangles;
+- image width × height;
+- texture sampling;
+- shot count;
+- room count;
+- crop volume;
+- transparency;
+- semantic output.
+
+Recommended stages:
+
+```text
+room discovery preview: 640x400
+normal agent review: 960x600 or 1280x800
+final evidence: 1536x960
+presentation: 2048x1280 only for selected views
+```
+
+Recommended gallery strategy:
+
+```text
+all rooms × 3 draft shots
+→ identify important/failed rooms
+→ rerender selected rooms × 3–5 shots
+→ produce presentation images only for approved cameras
+```
+
+Do not generate high-resolution coverage of every cavity by default.
+
+---
+
+## 43. SECURITY AND INTEGRITY RULES FOR CUTAWAYS
+
+Render-only visibility is safe only when it remains clearly separated from editing.
+
+Never:
+
+- convert a hidden-coordinate list into a committed clear-region patch without explicit authorization;
+- omit the occlusion mode from evidence;
+- claim a cutaway is a physical player view;
+- use hidden coordinates to conceal an error in final evidence;
+- write outside the selected output directory;
+- accept unbounded coordinate masks;
+- hide unknown/modded blocks merely because they render poorly;
+- alter the resource archive to improve one image without recording a new hash.
+
+Always:
+
+- record hidden coordinates/count;
+- preserve canonical/version hashes;
+- use physical views for navigability claims;
+- use exact queries for hidden blocks;
+- retain cutaway manifests with the PNGs.
+
+---
+
+## 44. AUTONOMOUS REPORTING EXTENSION
+
+In addition to the reporting standard in Section 25, any task using perspective/interior rendering must report:
+
+- feature revision;
+- projection mode;
+- room ID;
+- shot preset;
+- camera position;
+- camera target or yaw/pitch;
+- roll;
+- FOV;
+- near/far;
+- eye height;
+- lighting preset;
+- occlusion mode;
+- hidden coordinate count;
+- crop bounds;
+- candidate count;
+- perspective PNG path/hash;
+- perspective manifest path/hash;
+- semantic-map metadata path/hash;
+- snapshot/evidence ID;
+- exact pixel-to-block lookups used;
+- physical views reviewed;
+- hybrid/cutaway views reviewed;
+- unresolved room-classification limitations;
+- whether hosted CI actually executed.
+
+Suggested report block:
+
+```text
+Perspective interior evidence
+- feature revision: 1.0.3-p1-interior-perspective
+- room: room_...
+- shot: doorway
+- projection: perspective
+- camera: [x, y, z]
+- target: [x, y, z]
+- FOV: 70
+- near/far: 0.05 / 4096
+- eye height: 1.62
+- lighting: interior-soft
+- occlusion: physical
+- hidden coordinates: 0
+- evidence ID: ...
+- manifest: ...
+- grounded coordinates reviewed: ...
+```
+
+---
+
+## 45. FINAL PERSPECTIVE-INTERIOR CHECKLIST
+
+Before declaring an interior task complete:
+
+```text
+[ ] release contains the perspective/interior feature revision
+[ ] source-tree or installed CLI exposes `interior`
+[ ] bootstrap smoke completed or limitation recorded
+[ ] intended run was analyzed
+[ ] current room IDs were discovered from current analysis
+[ ] at least one physical perspective view exists for every required room
+[ ] important rooms have doorway and corner evidence
+[ ] feature/coverage evidence exists where relevant
+[ ] camera positions are in plausible navigable air
+[ ] camera clearance was checked
+[ ] FOV and near/far are valid
+[ ] gallery child renders received the requested far plane
+[ ] physical evidence was reviewed before hybrid/cutaway
+[ ] every hybrid/cutaway output discloses its mode
+[ ] hidden-coordinate count/mask is recorded
+[ ] render-only masks did not change canonical/version hashes
+[ ] perspective semantic maps were generated
+[ ] visual claims were grounded to exact coordinates
+[ ] exact states were queried before editing
+[ ] before/after comparisons use the same camera
+[ ] changed rooms were re-analyzed
+[ ] navigation, doors, windows, headroom, and lighting were reviewed
+[ ] legacy orthographic/isometric/slice paths remain usable
+[ ] final export round-trip verification passed
+[ ] final report includes all perspective metadata
+[ ] hosted CI status is reported honestly
+```
+
+---
+
+# APPENDIX D — PERSPECTIVE COMMAND QUICK REFERENCE
+
+```bash
+# Discover commands
+python -m app.cli render --help
+python -m app.cli interior --help
+python -m app.cli interior render --help
+python -m app.cli interior gallery --help
+
+# Manual perspective look-at render
+python -m app.cli render RUN_ROOT \
+  --projection perspective \
+  --camera-position X,Y,Z \
+  --camera-target TX,TY,TZ \
+  --camera-roll 0 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --size 1280x800 \
+  --mode textured \
+  --lighting interior-soft \
+  --name NAME \
+  --out OUTPUT
+
+# Manual perspective yaw/pitch render
+python -m app.cli render RUN_ROOT \
+  --projection perspective \
+  --camera-position X,Y,Z \
+  --camera-yaw YAW \
+  --camera-pitch PITCH \
+  --camera-roll 0 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --size 1280x800 \
+  --mode textured \
+  --lighting interior-soft \
+  --name NAME \
+  --out OUTPUT
+
+# One detected room
+python -m app.cli interior render RUN_ROOT \
+  --room ROOM_ID \
+  --shot auto \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion physical \
+  --out OUTPUT
+
+# All detected rooms, standard gallery
+python -m app.cli interior gallery RUN_ROOT \
+  --shots doorway,corner,feature \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion physical \
+  --out OUTPUT
+
+# Difficult rooms
+python -m app.cli interior gallery RUN_ROOT \
+  --shots doorway,corner,feature,coverage \
+  --size 1280x800 \
+  --fov 70 \
+  --near 0.05 \
+  --far 4096 \
+  --eye-height 1.62 \
+  --lighting interior-soft \
+  --occlusion hybrid \
+  --out OUTPUT
+
+# Ground an image pixel
+python -m app.cli pixel-to-block MANIFEST --px PX --py PY
+
+# Find visible pixels for a block
+python -m app.cli block-to-pixel MANIFEST --x X --y Y --z Z
+
+# Exact state confirmation
+python -m app.cli query block RUN_ROOT --x X --y Y --z Z --json
+```
+
+---
+
+# APPENDIX E — REVISION ACCEPTANCE STATEMENT
+
+An autonomous agent may state that the perspective-interior manual revision is installed only after confirming that this document contains Sections 28–45 and Appendices D–E.
+
+The correct bounded claim is:
+
+> The autonomous operating manual includes the `1.0.3-p1-interior-perspective` setup, commands, camera model, room-aware workflow, shot presets, occlusion policy, semantic grounding, troubleshooting, verification, and reporting requirements in addition to the pre-existing offline Snowflake/CoCo runbook.
+
+Do not claim that a documentation update alone proves the renderer works. Code tests, a real textured perspective render, semantic grounding, and regression checks remain required.
