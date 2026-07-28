@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 
 
-def _manifest_size_hash(path: Path) -> tuple[int, str]:
+def _git_preserves_bytes(repository: Path, path: Path) -> bool:
+    relative = path.resolve().relative_to(repository.resolve()).as_posix()
+    return _git(repository, "check-attr", "text", "--", relative).endswith(": unset")
+
+
+def _manifest_size_hash(path: Path, repository: Path) -> tuple[int, str]:
     with path.open("rb") as stream:
         head = stream.read(8192)
     is_text = b"\0" not in head
@@ -17,7 +22,7 @@ def _manifest_size_hash(path: Path) -> tuple[int, str]:
             head.decode("utf-8")
         except UnicodeDecodeError:
             is_text = False
-    if is_text:
+    if is_text and not _git_preserves_bytes(repository, path):
         canonical = path.read_bytes().replace(b"\r\n", b"\n")
         return len(canonical), hashlib.sha256(canonical).hexdigest()
     digest = hashlib.sha256()
@@ -40,8 +45,8 @@ def _git(root: Path, *arguments: str) -> str:
     return completed.stdout.strip()
 
 
-def _entry(path: Path, relative: str) -> dict[str, Any]:
-    size, digest = _manifest_size_hash(path)
+def _entry(path: Path, relative: str, repository: Path) -> dict[str, Any]:
+    size, digest = _manifest_size_hash(path, repository)
     return {
         "path": relative,
         "sha256": digest,
@@ -105,7 +110,7 @@ def update_overlay(release_root: Path, *, test_count: int) -> dict[str, Any]:
         if not path.is_file():
             relative_changes.add(relative)
             continue
-        size, digest = _manifest_size_hash(path)
+        size, digest = _manifest_size_hash(path, repository)
         if size != int(expected["size_bytes"]) or digest != expected["sha256"]:
             relative_changes.add(relative)
 
@@ -118,7 +123,7 @@ def update_overlay(release_root: Path, *, test_count: int) -> dict[str, Any]:
             if relative in base_entries:
                 deletions.append(relative)
             continue
-        item = _entry(path, relative)
+        item = _entry(path, relative, repository)
         (overrides if relative in base_entries else additions).append(item)
 
     effective_count = int(base["file_count"]) + len(additions) - len(deletions)
@@ -164,6 +169,7 @@ def update_overlay(release_root: Path, *, test_count: int) -> dict[str, Any]:
 
 def verify_overlay(release_root: Path) -> dict[str, Any]:
     release_root = release_root.resolve()
+    repository = Path(_git(release_root, "rev-parse", "--show-toplevel"))
     base = json.loads((release_root / "RELEASE_FILE_MANIFEST.json").read_text("utf-8"))
     overlay = json.loads((release_root / "RELEASE_FILE_MANIFEST_PATCH.json").read_text("utf-8"))
     effective = {item["path"]: item for item in base["files"]}
@@ -179,7 +185,7 @@ def verify_overlay(release_root: Path) -> dict[str, Any]:
         if not path.is_file():
             failures.append({"path": relative, "reason": "missing"})
             continue
-        size, digest = _manifest_size_hash(path)
+        size, digest = _manifest_size_hash(path, repository)
         total_size += int(expected["size_bytes"])
         if size != int(expected["size_bytes"]) or digest != expected["sha256"]:
             failures.append(
