@@ -17,8 +17,8 @@
     },
     {
       "path": "app/interior/model.py",
-      "sha256": "409b799244be023836f9fb4fb2600dfb3f65a2a7a2d7fc3706a5c48dd98b5c0d",
-      "size_bytes": 8970
+      "sha256": "8da03c57459982126735aef67ba054af02bdb88c0385b255b333b1d56a9ae2ba",
+      "size_bytes": 8968
     },
     {
       "path": "app/interior/rendering.py",
@@ -37,18 +37,18 @@
     },
     {
       "path": "app/render/perspective_primitives.py",
-      "sha256": "9feeda44b4a2ee91e86e401aa82454b19c63add415a1d9498c7eee12bb0d528c",
-      "size_bytes": 9127
+      "sha256": "98f131e39193d4c99fd1385b5cd463c35e17577c985bce363d6799a67e3b1f40",
+      "size_bytes": 9125
     },
     {
       "path": "app/render/perspective_raster.py",
-      "sha256": "4401a9fda48cc0954c486f2bc9103aba40abc3f10572f5cd9a3f2cf36ce9b006",
-      "size_bytes": 6177
+      "sha256": "6c6c705de85b9d84ad4038e6ee90c14c6bf336a8f996d2d251cd76d63bdac58f",
+      "size_bytes": 6176
     },
     {
       "path": "app/render/perspective_triangles.py",
-      "sha256": "b007f0fefa2bfde9e8f31f60a12b32fd92a5e6fbc4440308361ef955950633ed",
-      "size_bytes": 7641
+      "sha256": "47d1b75e02aba7627a01f58c0631939646ae3a217961695a45f4ff7e997a08a1",
+      "size_bytes": 7640
     },
     {
       "path": "docs/architecture/interior-perspective.md",
@@ -65,8 +65,8 @@
   "base_version": "1.0.3",
   "deletions": [],
   "description": "Room-aware first-person perspective renderer feature overlay. Base release files remain hash-locked; only listed overrides and additions are permitted.",
-  "effective_file_count": 291,
-  "effective_total_size_bytes": 413068533,
+  "effective_file_count": 300,
+  "effective_total_size_bytes": 413127727,
   "feature_revision": "1.0.3-p1-interior-perspective",
   "overrides": [
     {
@@ -78,6 +78,11 @@
       "path": "CHANGELOG.md",
       "sha256": "b2c7a3ff6f5416dd5c9ef6025ff45786c7ee4d701573d5515823718c4450b9d1",
       "size_bytes": 3479
+    },
+    {
+      "path": "SNOWFLAKE_COCO_AUTONOMOUS_LLM_AGENT_GUIDE.md",
+      "sha256": "194179258b7c4ad45bc5a057339b94d02737e2e4c13e799106b52b10c8c8ff91",
+      "size_bytes": 167850
     },
     {
       "path": "app/render/__init__.py",
