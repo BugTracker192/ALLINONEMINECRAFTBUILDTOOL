@@ -116,6 +116,20 @@ def _entity_position(raw: dict[str, Any]) -> tuple[float, float, float] | None:
     return None
 
 
+def _entity_id(raw: dict[str, Any]) -> str | None:
+    for key in ("id", "Id"):
+        value = raw.get(key)
+        if isinstance(value, str):
+            return value
+    nested = raw.get("Data")
+    if isinstance(nested, dict):
+        for key in ("id", "Id"):
+            value = nested.get(key)
+            if isinstance(value, str):
+                return value
+    return None
+
+
 def parse_litematic(
     root: dict[str, Any],
     *,
@@ -192,11 +206,11 @@ def parse_litematic(
             be = require_compound(raw_be, "TileEntity")
             pos = be.get("Pos")
             if isinstance(pos, list) and len(pos) == 3 and all(isinstance(v, int) for v in pos):
-                world = IntVector3(*pos)
+                world = position + IntVector3(*pos)
                 block_entities.append(
                     CanonicalBlockEntity(
                         world,
-                        be.get("id") if isinstance(be.get("id"), str) else None,
+                        _entity_id(be),
                         be,
                         region_name,
                     )
@@ -205,7 +219,7 @@ def parse_litematic(
             entity = require_compound(raw_entity, "Entity")
             entities.append(
                 CanonicalEntity(
-                    entity.get("id") if isinstance(entity.get("id"), str) else None,
+                    _entity_id(entity),
                     _entity_position(entity),
                     entity,
                     region_name,

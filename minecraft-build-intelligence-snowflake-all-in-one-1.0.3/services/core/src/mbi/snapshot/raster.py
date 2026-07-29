@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from PIL import Image
 
 from ..canonical import BuildDocument, IntVector3
+from ..hashing import nonsecurity_blake2s
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +25,7 @@ class LayerManifest:
 
 
 def palette_color(palette_id: int) -> tuple[int, int, int, int]:
-    digest = hashlib.blake2s(str(palette_id).encode(), digest_size=3).digest()
+    digest = nonsecurity_blake2s(str(palette_id).encode(), digest_size=3).digest()
     return digest[0], digest[1], digest[2], 255
 
 

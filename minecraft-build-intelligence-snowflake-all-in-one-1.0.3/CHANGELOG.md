@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.1.0 — 2026-07-29 — Meduseld quality and map-maker release
+
+- Fixed Litematic block-entity local coordinates/ID normalization and made all
+  exact-verification mismatch classes independent.
+- Added FIPS-safe non-security hashing, version-aware bootstrap requirements,
+  PEP 660 editable installs, local-scratch mirroring, and warm caches.
+- Added legacy asset migrations and entity-texture proxy rendering for
+  banners, skulls/heads, signs, beds, and shulker boxes.
+- Added default auto-fit framing, fast preview, exact resumable tiled rendering,
+  slice naming, and reject-by-default interior quality gates.
+- Added whole-volume map export, texture audit gates, palette atlases, contact
+  sheets, slice sweeps, and annotated renders.
+- Added manual seed-and-clip rooms, conservative structure-envelope sealing,
+  scoped lighting/navigation, walkthroughs, sightlines, cumulative coverage,
+  and furnishing/dead-volume metrics.
+- Added normalized facade monotony, exact symmetry, composite quality
+  scorecards, CI thresholds, and version-to-version quality diffs.
+- Added structure segmentation/classification, inventory/naming/extraction,
+  resumable per-structure analysis, interior programs/packets, site plans,
+  terrain integration, settlement navigation, approach sightlines, LOD
+  rendering, and structure comparison.
+- Added reference style profiles, durable room/bay/landmark anchors, critique
+  findings, compound assemblies, fixture kits, symmetry-aware edits, seeded
+  greebling, and repeated modules.
+- Validated against the 108,917-block Meduseld schematic; see
+  `MEDUSELD_IMPLEMENTATION_TRACEABILITY.md`.
+
 ## 1.0.3-p2 — 2026-07-29 — production interior vision and evidence packets
 
 - Added scalable enclosed-space classification with architectural, natural, terrain, decorative, roof, wall, vegetation, and fluid evidence scores.

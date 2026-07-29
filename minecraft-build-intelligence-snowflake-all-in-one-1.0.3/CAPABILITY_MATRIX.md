@@ -27,6 +27,19 @@ This matrix describes the mandatory offline Python profile, not the optional hos
 | Verified export | **Implemented** | Sponge v3 and Litematic outputs are re-imported through the normal parser and compared coordinate-by-coordinate and state-by-state. |
 | Autonomous agent documentation | **Implemented** | `SNOWFLAKE_COCO_AUTONOMOUS_LLM_AGENT_GUIDE.md` is an LLM-only, no-routine-human runbook with complete schemas, operations and recovery rules. |
 
+## Meduseld quality and map-maker capabilities (1.1.0)
+
+| Capability | Status | Grounded behavior |
+|---|---|---|
+| Whole-volume comprehension | **Implemented** | Block-map CSV/JSONL/optional Parquet, texture gates, palette atlases, labelled contact sheets, slice sweeps, and annotated renders cover symbolic and visual evidence. |
+| Exact scalable rendering | **Implemented** | Fit-to-subject framing is default; exact screen-space tiles checkpoint image and semantic slices, validate resume markers, and use disk-backed buffers. Fast preview is explicitly non-texture-exact. |
+| Entity-rendered blocks | **Implemented** | Banners/patterns, skulls/heads, signs, beds, and shulker boxes use entity-atlas proxy meshes with distinct `ENTITY_RENDERED` diagnostics. |
+| Scoped interior intelligence | **Implemented** | Bounds, structures, manual rooms, conservative envelope sealing, configurable lighting, furnishing/dead-volume metrics, walkthroughs, sightlines, and cumulative packet coverage. |
+| Quality feedback loop | **Implemented** | Comparable normalized lighting, coverage, furnishing, facade, structural, circulation, palette, and symmetry scores support thresholds and version diffs. |
+| Map-scale structure intelligence | **Implemented** | Streamed classification/segmentation, inventory/names/extracts, checkpoints, room programs, completeness, site/terrain/navigation/sightline/LOD reports, and structure comparisons. |
+| Reference-style authoring | **Implemented** | Style profiles, critique, durable anchors, truss/dormer/arcade/bellcast assemblies, fixtures, symmetry edits, greebling, and controlled repetition remain bounded patch operations. |
+| Meduseld traceability | **Implemented** | `MEDUSELD_IMPLEMENTATION_TRACEABILITY.md` maps every report item to code, tests, and real-schematic acceptance evidence. |
+
 ## Literal vision and exact identity
 
 The system does not ask an AI to infer block identity from pixels. The model receives literal rendered PNGs for appearance and geometry, while exact canonical tools and pixel-hit maps provide namespaced IDs, ordered properties, NBT and coordinates. This directly implements the master prompt's central visual-symbolic rule.

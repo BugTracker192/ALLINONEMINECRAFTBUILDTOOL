@@ -37,6 +37,22 @@ def _size(value: str) -> tuple[int, int]:
     return values[0], values[1]
 
 
+def _inclusive_bounds(value: str) -> IntBoundingBox:
+    values = [int(item.strip()) for item in value.split(",")]
+    if len(values) != 6:
+        raise argparse.ArgumentTypeError(
+            "bounds must be X1,Y1,Z1,X2,Y2,Z2 (inclusive)"
+        )
+    return IntBoundingBox(IntVector3(*values[:3]), IntVector3(*values[3:]))
+
+
+def _int_vector(value: str) -> IntVector3:
+    values = [int(item.strip()) for item in value.split(",")]
+    if len(values) != 3:
+        raise argparse.ArgumentTypeError("coordinate must be X,Y,Z")
+    return IntVector3(*values)
+
+
 def _json(value: Any) -> None:
     print(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str))
 
@@ -142,7 +158,12 @@ def _render(args: argparse.Namespace) -> Any:
     from app.assets import open_resource_pack
 
     document = load_document(args.run)
-    pack = open_resource_pack(args.resource_pack)
+    pack = (
+        open_resource_pack(args.resource_pack)
+        if args.accuracy == "exact"
+        else None
+    )
+    effective_mode = "flat" if args.accuracy == "fast" else args.mode
     try:
         renderer = SoftwareRenderer(document, resource_pack=pack, strict_textures=args.strict_textures, seed=args.seed)
         if args.slice:
@@ -157,10 +178,11 @@ def _render(args: argparse.Namespace) -> Any:
                 minimum=minimum,
                 maximum=maximum,
                 pixels_per_block=args.pixels_per_block,
-                mode=args.mode,
+                mode=effective_mode,
                 include_regions=tuple(args.region or ()),
                 include_states=tuple(args.material or ()),
                 exclude_states=tuple(args.hide_material or ()),
+                name=args.name,
             )
         else:
             crop = None
@@ -178,24 +200,65 @@ def _render(args: argparse.Namespace) -> Any:
                     args.camera_roll,
                     args.zoom,
                     None,
-                    True,
+                    args.fit,
                     args.margin,
                 )
             else:
-                camera = CameraSpec(args.camera_azimuth, args.camera_elevation, args.camera_roll, args.zoom, None, True, args.margin)
-            result = renderer.render(
-                args.out or args.run,
-                camera=camera,
-                crop=crop,
-                size=args.size,
-                mode=args.mode,
-                lighting_preset=args.lighting,
-                include_regions=tuple(args.region or ()),
-                include_states=tuple(args.material or ()),
-                exclude_states=tuple(args.hide_material or ()),
-                name=args.name,
+                camera = CameraSpec(
+                    args.camera_azimuth,
+                    args.camera_elevation,
+                    args.camera_roll,
+                    args.zoom,
+                    None,
+                    args.fit,
+                    args.margin,
+                )
+            render_method = (
+                renderer.render_tiled
+                if args.tile_size
+                else renderer.render
             )
-        return {"png": str(result.png_path), "manifest": str(result.manifest_path), "snapshot_id": result.snapshot_id, "diagnostics": result.diagnostics}
+            render_options = {
+                "camera": camera,
+                "crop": crop,
+                "size": args.size,
+                "mode": effective_mode,
+                "lighting_preset": args.lighting,
+                "include_regions": tuple(args.region or ()),
+                "include_states": tuple(args.material or ()),
+                "exclude_states": tuple(args.hide_material or ()),
+                "name": args.name,
+            }
+            if args.tile_size:
+                render_options["tile_size"] = args.tile_size
+                render_options["resume"] = args.resume
+            result = render_method(args.out or args.run, **render_options)
+        result.manifest["accuracy"] = {
+            "profile": args.accuracy,
+            "texture_exact": (
+                args.accuracy == "exact"
+                and effective_mode == "textured"
+                and pack is not None
+            ),
+            "contract": (
+                "full blockstate/model/resource-pack texture resolution"
+                if args.accuracy == "exact" and effective_mode == "textured"
+                else (
+                    "palette-color occupancy preview; not texture-exact "
+                    "and not model-shape-exact"
+                    if args.accuracy == "fast"
+                    else "flat semantic geometry; not texture-exact"
+                )
+            ),
+        }
+        atomic_write_json(result.manifest_path, result.manifest)
+        return {
+            "png": str(result.png_path),
+            "manifest": str(result.manifest_path),
+            "snapshot_id": result.snapshot_id,
+            "accuracy": result.manifest["accuracy"],
+            "diagnostics": result.diagnostics,
+        }
     finally:
         if pack:
             pack.close()
@@ -234,6 +297,39 @@ def build_parser() -> argparse.ArgumentParser:
 
     command = sub.add_parser("analyze")
     command.add_argument("run")
+    command.add_argument(
+        "--bounds",
+        type=_inclusive_bounds,
+        help="Analyze inclusive world bounds X1,Y1,Z1,X2,Y2,Z2 independently.",
+    )
+    command.add_argument(
+        "--lighting-max-cells",
+        type=int,
+        default=10_000_000,
+        help="Maximum lighting scope volume; pass 0 to remove the cap.",
+    )
+    command.add_argument("--dark-threshold", type=int, default=7)
+    command.add_argument("--room-max-cells", type=int, default=20_000_000)
+    command.add_argument(
+        "--seal-structure-envelope",
+        action="store_true",
+        help=(
+            "Recover plausible rooms behind exterior openings inside the "
+            "selected bounds."
+        ),
+    )
+    command.add_argument(
+        "--room-bounds",
+        type=_inclusive_bounds,
+        action="append",
+        help="Seed-and-clip a manual room; repeatable. Openings at the bound are sealed and reported.",
+    )
+    command.add_argument(
+        "--room-seed",
+        type=_int_vector,
+        action="append",
+        help="Air-cell seed corresponding to each --room-bounds, in the same order.",
+    )
     command.add_argument("--out")
 
     command = sub.add_parser("snapshot")
@@ -263,10 +359,38 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--camera-azimuth", type=float, default=45)
     command.add_argument("--camera-elevation", type=float, default=30)
     command.add_argument("--camera-roll", type=float, default=0)
-    command.add_argument("--zoom", type=float, default=1.0)
-    command.add_argument("--margin", type=float, default=1.0)
+    command.add_argument(
+        "--zoom",
+        type=float,
+        default=1.0,
+        help=(
+            "Scale after automatic fit-to-subject framing; with --no-fit, "
+            "absolute pixels per block."
+        ),
+    )
+    command.add_argument(
+        "--fit",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Automatically fit canonical or cropped bounds to the frame (default: enabled).",
+    )
+    command.add_argument(
+        "--margin",
+        type=float,
+        default=0.5,
+        help="World-space margin in blocks around the automatically fitted subject.",
+    )
     command.add_argument("--size", type=_size, default=(1536, 1536))
     command.add_argument("--mode", choices=("flat", "textured"), default="textured")
+    command.add_argument(
+        "--accuracy",
+        choices=("exact", "fast"),
+        default="exact",
+        help=(
+            "Exact uses resource-pack models/textures; fast emits a cheap "
+            "palette-color occupancy preview with an explicit non-exact contract."
+        ),
+    )
     command.add_argument("--lighting", default="analysis-neutral")
     command.add_argument("--resource-pack")
     command.add_argument("--strict-textures", action="store_true")
@@ -278,6 +402,20 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--region", action="append", help="Render only the named region; repeatable.")
     command.add_argument("--material", action="append", help="Render only this exact state or base block ID; repeatable.")
     command.add_argument("--hide-material", action="append", help="Hide this exact state or base block ID; repeatable.")
+    command.add_argument(
+        "--tile-size",
+        type=int,
+        default=0,
+        help=(
+            "Enable exact checkpointed screen-tiled rendering with TILE_SIZE "
+            "pixels per tile (recommended: 256-1024)."
+        ),
+    )
+    command.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume completed tiles from durable render checkpoints.",
+    )
     command.add_argument("--name")
     command.add_argument("--out")
 
@@ -390,8 +528,51 @@ def dispatch(args: argparse.Namespace) -> Any:
     if args.command == "import":
         return import_file(args.file, args.out).to_summary()
     if args.command == "analyze":
+        analysis_bounds = args.bounds
+        structure_identifier = getattr(args, "structure", None)
+        if structure_identifier:
+            if analysis_bounds is not None:
+                raise AppError(
+                    "ANALYSIS_SCOPE_CONFLICT",
+                    "--bounds and --structure cannot be supplied together.",
+                    exit_code=2,
+                )
+            from app.structures import resolve_structure_bounds
+
+            analysis_bounds = resolve_structure_bounds(
+                args.run,
+                structure_identifier,
+            )
         target = clone_run_base(args.run, args.out) if args.out else Path(args.run)
-        return analyze_run(target)
+        room_bounds = tuple(args.room_bounds or ())
+        room_seeds = tuple(args.room_seed or ())
+        if len(room_seeds) > len(room_bounds):
+            raise AppError(
+                "ROOM_SEED_WITHOUT_BOUNDS",
+                "Each --room-seed requires a corresponding --room-bounds.",
+                exit_code=2,
+            )
+        manual_rooms = tuple(
+            (
+                requested,
+                room_seeds[index] if index < len(room_seeds) else None,
+            )
+            for index, requested in enumerate(room_bounds)
+        )
+        return analyze_run(
+            target,
+            bounds=analysis_bounds,
+            lighting_max_cells=(
+                None if args.lighting_max_cells == 0 else args.lighting_max_cells
+            ),
+            dark_threshold=args.dark_threshold,
+            room_max_cells=args.room_max_cells,
+            manual_rooms=manual_rooms,
+            seal_structure_envelope=(
+                bool(structure_identifier)
+                or args.seal_structure_envelope
+            ),
+        )
     if args.command == "snapshot":
         target = clone_run_base(args.run, args.out) if args.out else Path(args.run)
         return {"snapshots": snapshot_run(target, resource_pack=args.resource_pack, views=tuple(item for item in args.views.split(",") if item), size=args.size, pixels_per_block=args.pixels_per_block, strict_textures=args.strict_textures)}

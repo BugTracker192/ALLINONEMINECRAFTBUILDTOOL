@@ -6,6 +6,12 @@ from .resource_pack import (
     open_resource_pack,
     resolve_resource_pack_path,
 )
+from .legacy_ids import (
+    LEGACY_ASSET_MIGRATION_VERSION,
+    LEGACY_BLOCK_ALIASES,
+    AssetStateMigration,
+    migrate_asset_state,
+)
 
 __all__ = [
     "ModelInstance",
@@ -14,4 +20,8 @@ __all__ = [
     "bundled_resource_pack_path",
     "open_resource_pack",
     "resolve_resource_pack_path",
+    "AssetStateMigration",
+    "LEGACY_ASSET_MIGRATION_VERSION",
+    "LEGACY_BLOCK_ALIASES",
+    "migrate_asset_state",
 ]

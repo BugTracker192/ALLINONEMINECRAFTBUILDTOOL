@@ -49,6 +49,18 @@ _LIGHT_LEVELS = {
     "minecraft:end_rod": 14,
     "minecraft:campfire": 15,
     "minecraft:soul_campfire": 10,
+    "minecraft:ochre_froglight": 15,
+    "minecraft:pearlescent_froglight": 15,
+    "minecraft:verdant_froglight": 15,
+    "minecraft:fire": 15,
+    "minecraft:soul_fire": 10,
+    "minecraft:magma_block": 3,
+    "minecraft:crying_obsidian": 10,
+    "minecraft:glow_lichen": 7,
+    "minecraft:brown_mushroom": 1,
+    "minecraft:brewing_stand": 1,
+    "minecraft:end_portal": 15,
+    "minecraft:end_gateway": 15,
     "minecraft:lava": 15,
 }
 
@@ -66,6 +78,26 @@ def block_profile(entry: PaletteEntry) -> BlockProfile:
         light = 0
     if base == "minecraft:campfire" and props.get("lit") == "false":
         light = 0
+    if base == "minecraft:soul_campfire" and props.get("lit") == "false":
+        light = 0
+    if name.endswith("candle"):
+        light = (
+            min(12, max(1, int(props.get("candles", "1"))) * 3)
+            if props.get("lit", "false") == "true"
+            else 0
+        )
+    if name in {"furnace", "blast_furnace", "smoker", "redstone_ore"}:
+        light = 13 if props.get("lit", "false") == "true" else 0
+    if name == "light":
+        light = max(0, min(15, int(props.get("level", "15"))))
+    if name == "respawn_anchor":
+        light = min(15, max(0, int(props.get("charges", "0"))) * 3)
+    if name == "sea_pickle":
+        light = (
+            min(15, 3 + max(1, int(props.get("pickles", "1"))) * 3)
+            if props.get("waterlogged", "true") == "true"
+            else 0
+        )
 
     if entry.is_air_like or entry.is_fluid:
         return BlockProfile(True, False, 0.0, light_level=light, transparent=True)

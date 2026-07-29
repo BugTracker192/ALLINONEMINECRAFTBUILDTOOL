@@ -34,36 +34,43 @@ _PROFILE_THRESHOLDS: dict[str, dict[str, float]] = {
     "physical_first_person": {
         "min_room_pixel_ratio": 0.12,
         "max_dominant_coordinate_ratio": 0.78,
+        "max_dominant_plane_ratio": 0.88,
         "min_depth_spread": 0.30,
     },
     "physical_third_person": {
         "min_room_pixel_ratio": 0.10,
         "max_dominant_coordinate_ratio": 0.78,
+        "max_dominant_plane_ratio": 0.88,
         "min_depth_spread": 0.25,
     },
     "feature_closeup": {
         "min_room_pixel_ratio": 0.08,
         "max_dominant_coordinate_ratio": 0.84,
+        "max_dominant_plane_ratio": 0.92,
         "min_depth_spread": 0.18,
     },
     "room_coverage": {
         "min_room_pixel_ratio": 0.18,
         "max_dominant_coordinate_ratio": 0.68,
+        "max_dominant_plane_ratio": 0.82,
         "min_depth_spread": 0.35,
     },
     "third_person_cutaway": {
         "min_room_pixel_ratio": 0.15,
         "max_dominant_coordinate_ratio": 0.72,
+        "max_dominant_plane_ratio": 0.82,
         "min_depth_spread": 0.25,
     },
     "roof_off": {
         "min_room_pixel_ratio": 0.14,
         "max_dominant_coordinate_ratio": 0.72,
+        "max_dominant_plane_ratio": 0.82,
         "min_depth_spread": 0.20,
     },
     "presentation": {
         "min_room_pixel_ratio": 0.20,
         "max_dominant_coordinate_ratio": 0.62,
+        "max_dominant_plane_ratio": 0.76,
         "min_depth_spread": 0.40,
     },
 }
@@ -220,6 +227,8 @@ def evaluate_frame(
         reasons.append("insufficient-architectural-detail")
     if dominant_ratio > maximum_obstruction:
         reasons.append("single-surface-obstruction")
+    if dominant_plane_ratio > thresholds["max_dominant_plane_ratio"]:
+        reasons.append("dominant-plane-obstruction")
     if room_pixel_ratio < minimum_room:
         reasons.append("room-not-prominent")
     if depth_spread < thresholds["min_depth_spread"] and len(geometry.cells) >= 12:

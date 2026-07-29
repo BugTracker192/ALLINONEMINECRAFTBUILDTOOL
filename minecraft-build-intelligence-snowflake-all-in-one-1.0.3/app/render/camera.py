@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 import numpy as np
-
 from mbi.canonical import IntBoundingBox
 
 
@@ -21,7 +20,7 @@ class CameraSpec:
     far: float = 1_000_000.0
 
     @classmethod
-    def preset(cls, name: str) -> "CameraSpec":
+    def preset(cls, name: str) -> CameraSpec:
         values = {
             "north": (0.0, 0.0),
             "south": (180.0, 0.0),
@@ -84,7 +83,11 @@ def camera_transform(bounds: IntBoundingBox, size: tuple[int, int], spec: Camera
     azimuth = math.radians(spec.azimuth_degrees)
     elevation = math.radians(max(-89.999999, min(89.999999, spec.elevation_degrees)))
     camera_from_target = np.asarray(
-        [math.sin(azimuth) * math.cos(elevation), math.sin(elevation), -math.cos(azimuth) * math.cos(elevation)],
+        [
+            math.sin(azimuth) * math.cos(elevation),
+            math.sin(elevation),
+            -math.cos(azimuth) * math.cos(elevation),
+        ],
         dtype=np.float64,
     )
     forward = _normalize(-camera_from_target)
@@ -114,14 +117,30 @@ def camera_transform(bounds: IntBoundingBox, size: tuple[int, int], spec: Camera
     relative = corners - target[None, :]
     xs = relative @ right
     ys = relative @ up
-    extent_x = max(1e-6, float(xs.max() - xs.min()) + 2.0 * spec.margin_blocks)
-    extent_y = max(1e-6, float(ys.max() - ys.min()) + 2.0 * spec.margin_blocks)
-    scale = min((width - 1) / extent_x, (height - 1) / extent_y) * max(1e-6, spec.zoom)
+    if spec.fit_bounds:
+        extent_x = max(
+            1e-6,
+            float(xs.max() - xs.min()) + 2.0 * spec.margin_blocks,
+        )
+        extent_y = max(
+            1e-6,
+            float(ys.max() - ys.min()) + 2.0 * spec.margin_blocks,
+        )
+        scale = min((width - 1) / extent_x, (height - 1) / extent_y)
+        scale *= max(1e-6, spec.zoom)
+        x_center_world = float((xs.min() + xs.max()) / 2.0)
+        y_center_world = float((ys.min() + ys.max()) / 2.0)
+        center_x = (width - 1) / 2.0 - x_center_world * scale
+        center_y = (height - 1) / 2.0 + y_center_world * scale
+    else:
+        # In manual framing mode zoom is an absolute pixels-per-block scale
+        # and the requested target is fixed at the canvas center.
+        scale = max(1e-6, spec.zoom)
+        center_x = (width - 1) / 2.0
+        center_y = (height - 1) / 2.0
     scale = round(scale, 9)
-    x_center_world = float((xs.min() + xs.max()) / 2.0)
-    y_center_world = float((ys.min() + ys.max()) / 2.0)
-    center_x = round((width - 1) / 2.0 - x_center_world * scale, 9)
-    center_y = round((height - 1) / 2.0 + y_center_world * scale, 9)
+    center_x = round(center_x, 9)
+    center_y = round(center_y, 9)
 
     view = np.eye(4, dtype=np.float64)
     view[0, :3] = right

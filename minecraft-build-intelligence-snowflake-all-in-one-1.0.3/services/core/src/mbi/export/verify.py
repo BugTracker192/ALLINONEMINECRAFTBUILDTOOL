@@ -13,8 +13,24 @@ class RoundTripReport:
     valid: bool
     source_hash: str
     exported_hash: str
-    mismatch_count: int
+    bounds_mismatches: int
+    coordinate_mismatches: int
+    state_mismatches: int
+    region_mismatches: int
+    block_entity_mismatches: int
+    entity_mismatches: int
     messages: tuple[str, ...]
+
+    @property
+    def mismatch_count(self) -> int:
+        return (
+            self.bounds_mismatches
+            + self.coordinate_mismatches
+            + self.state_mismatches
+            + self.region_mismatches
+            + self.block_entity_mismatches
+            + self.entity_mismatches
+        )
 
 
 def _normalized_nbt(value: Any) -> Any:
@@ -37,36 +53,37 @@ def _state(document: BuildDocument, position: IntVector3) -> str:
 def verify_round_trip(original: BuildDocument, exported: bytes, filename: str) -> RoundTripReport:
     reparsed = import_build(exported, filename)
     messages: list[str] = []
-    mismatches = 0
+    bounds_mismatches = 0
+    coordinate_mismatches = 0
+    state_mismatches = 0
+    region_mismatches = 0
+    block_entity_mismatches = 0
+    entity_mismatches = 0
     if original.bounds != reparsed.bounds:
         messages.append(f"Bounds mismatch: {original.bounds} != {reparsed.bounds}")
-        mismatches += 1
-    union_min = IntVector3(
-        min(original.bounds.min.x, reparsed.bounds.min.x),
-        min(original.bounds.min.y, reparsed.bounds.min.y),
-        min(original.bounds.min.z, reparsed.bounds.min.z),
-    )
-    union_max = IntVector3(
-        max(original.bounds.max.x, reparsed.bounds.max.x),
-        max(original.bounds.max.y, reparsed.bounds.max.y),
-        max(original.bounds.max.z, reparsed.bounds.max.z),
-    )
-    for y in range(union_min.y, union_max.y + 1):
-        for z in range(union_min.z, union_max.z + 1):
-            for x in range(union_min.x, union_max.x + 1):
-                position = IntVector3(x, y, z)
-                a = _state(original, position)
-                b = _state(reparsed, position)
-                if a != b:
-                    mismatches += 1
-                    if len(messages) < 50:
-                        messages.append(f"Block mismatch at ({x},{y},{z}): {a} != {b}")
+        bounds_mismatches = 1
+    original_positions = set(original.blocks)
+    reparsed_positions = set(reparsed.blocks)
+    missing_positions = original_positions - reparsed_positions
+    extra_positions = reparsed_positions - original_positions
+    coordinate_mismatches = len(missing_positions) + len(extra_positions)
+    for position in sorted(missing_positions)[:25]:
+        messages.append(f"Missing exported block coordinate: {position.as_tuple()}")
+    for position in sorted(extra_positions)[:25]:
+        messages.append(f"Unexpected exported block coordinate: {position.as_tuple()}")
+    for position in sorted(original_positions & reparsed_positions):
+        a = _state(original, position)
+        b = _state(reparsed, position)
+        if a != b:
+            state_mismatches += 1
+            if len(messages) < 50:
+                messages.append(f"Block state mismatch at {position.as_tuple()}: {a} != {b}")
 
     if filename.lower().endswith(".litematic") and original.regions:
         original_regions = {region.name: region for region in original.regions}
         reparsed_regions = {region.name: region for region in reparsed.regions}
         if set(original_regions) != set(reparsed_regions):
-            mismatches += 1
+            region_mismatches += len(set(original_regions) ^ set(reparsed_regions)) or 1
             messages.append(
                 f"Region-name mismatch: {sorted(original_regions)} != {sorted(reparsed_regions)}"
             )
@@ -74,7 +91,7 @@ def verify_round_trip(original: BuildDocument, exported: bytes, filename: str) -
             a = original_regions[name]
             b = reparsed_regions[name]
             if a.source_position != b.source_position or a.source_signed_size != b.source_signed_size:
-                mismatches += 1
+                region_mismatches += 1
                 messages.append(
                     f"Region transform mismatch for {name}: "
                     f"{a.source_position}/{a.source_signed_size} != {b.source_position}/{b.source_signed_size}"
@@ -96,7 +113,7 @@ def verify_round_trip(original: BuildDocument, exported: bytes, filename: str) -
                     else "minecraft:air"
                 )
                 if a_state != b_state:
-                    mismatches += 1
+                    region_mismatches += 1
                     if len(messages) < 50:
                         messages.append(f"Region {name} mismatch at {position.as_tuple()}: {a_state} != {b_state}")
 
@@ -111,42 +128,84 @@ def verify_round_trip(original: BuildDocument, exported: bytes, filename: str) -
         }
         return _normalized_nbt(merged)
 
-    def entity_key(item: Any) -> tuple[Any, ...]:
-        region = item.region_name if is_litematic else None
+    def effective_region(item: Any, document: BuildDocument) -> str | None:
+        if not is_litematic:
+            return None
+        if item.region_name is not None:
+            return str(item.region_name)
+        position = item.position
+        if position is None or not hasattr(position, "x"):
+            return None
+        matches = sorted(
+            region.name for region in document.regions if region.bounds.contains(position)
+        )
+        return matches[0] if len(matches) == 1 else None
+
+    def entity_key(item: Any, document: BuildDocument) -> tuple[Any, ...]:
+        region = effective_region(item, document)
         return (region, item.namespaced_id, item.position)
 
     original_entities = {
-        entity_key(item): json.dumps(normalized_entity_data(item), sort_keys=True, separators=(",", ":"))
+        entity_key(item, original): json.dumps(
+            normalized_entity_data(item), sort_keys=True, separators=(",", ":")
+        )
         for item in original.entities
     }
     reparsed_entities = {
-        entity_key(item): json.dumps(normalized_entity_data(item), sort_keys=True, separators=(",", ":"))
+        entity_key(item, reparsed): json.dumps(
+            normalized_entity_data(item), sort_keys=True, separators=(",", ":")
+        )
         for item in reparsed.entities
     }
     if original_entities != reparsed_entities:
-        mismatches += len(set(original_entities) ^ set(reparsed_entities)) or 1
+        entity_mismatches = len(set(original_entities) ^ set(reparsed_entities))
+        entity_mismatches += sum(
+            original_entities[key] != reparsed_entities[key]
+            for key in set(original_entities) & set(reparsed_entities)
+        )
+        entity_mismatches = entity_mismatches or 1
         messages.append("Entity identity or normalized NBT mismatch after export round trip.")
 
-    def block_entity_key(item: Any) -> tuple[Any, ...]:
-        region = item.region_name if is_litematic else None
+    def block_entity_key(item: Any, document: BuildDocument) -> tuple[Any, ...]:
+        region = effective_region(item, document)
         return (region, item.position, item.namespaced_id)
 
     original_block_entities = {
-        block_entity_key(item): normalized_entity_data(item)
+        block_entity_key(item, original): normalized_entity_data(item)
         for item in original.block_entities
     }
     reparsed_block_entities = {
-        block_entity_key(item): normalized_entity_data(item)
+        block_entity_key(item, reparsed): normalized_entity_data(item)
         for item in reparsed.block_entities
     }
     if original_block_entities != reparsed_block_entities:
-        mismatches += len(set(original_block_entities) ^ set(reparsed_block_entities)) or 1
+        block_entity_mismatches = len(
+            set(original_block_entities) ^ set(reparsed_block_entities)
+        )
+        block_entity_mismatches += sum(
+            original_block_entities[key] != reparsed_block_entities[key]
+            for key in set(original_block_entities) & set(reparsed_block_entities)
+        )
+        block_entity_mismatches = block_entity_mismatches or 1
         messages.append("Block-entity identity or normalized NBT mismatch after export round trip.")
 
+    mismatch_count = (
+        bounds_mismatches
+        + coordinate_mismatches
+        + state_mismatches
+        + region_mismatches
+        + block_entity_mismatches
+        + entity_mismatches
+    )
     return RoundTripReport(
-        mismatches == 0,
+        mismatch_count == 0,
         original.content_hash,
         reparsed.content_hash,
-        mismatches,
+        bounds_mismatches,
+        coordinate_mismatches,
+        state_mismatches,
+        region_mismatches,
+        block_entity_mismatches,
+        entity_mismatches,
         tuple(messages[:100]),
     )

@@ -13,6 +13,30 @@ def test_litematic_round_trip(sample_document) -> None:
     data = export_litematic(sample_document)
     report = verify_round_trip(sample_document, data, "fixture.litematic")
     assert report.valid, report.messages
+    assert report.coordinate_mismatches == 0
+    assert report.state_mismatches == 0
+    assert report.block_entity_mismatches == 0
+
+
+def test_litematic_round_trip_preserves_region_local_pos_and_id_case(sample_document) -> None:
+    from mbi.canonical import CanonicalBlockEntity, IntVector3
+
+    region = sample_document.regions[0]
+    position = region.source_position + IntVector3(1, 1, 1)
+    sample_document.block_entities = [
+        CanonicalBlockEntity(
+            position,
+            "minecraft:chest",
+            {"Id": "minecraft:chest", "Pos": [1, 1, 1], "CustomName": "Archive"},
+            region.name,
+        )
+    ]
+    data = export_litematic(sample_document)
+    report = verify_round_trip(sample_document, data, "fixture.litematic")
+    assert report.valid, report.messages
+    assert report.coordinate_mismatches == 0
+    assert report.state_mismatches == 0
+    assert report.block_entity_mismatches == 0
 
 
 def test_sponge_round_trip_preserves_entities_and_block_entities(sample_document) -> None:

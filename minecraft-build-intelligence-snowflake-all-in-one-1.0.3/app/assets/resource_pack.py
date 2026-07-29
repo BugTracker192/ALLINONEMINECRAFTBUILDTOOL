@@ -16,6 +16,7 @@ from typing import Any, Iterable
 from PIL import Image
 
 from app.assets.bundled import ensure_bundled_asset
+from app.assets.legacy_ids import migrate_asset_state
 from app.config import RuntimeConfig
 from app.errors import AppError
 
@@ -112,6 +113,7 @@ class ResourcePackSource:
         self._model_cache = _LRU(self.config.model_cache_items)
         self._texture_cache = _LRU(self.config.texture_cache_items)
         self.diagnostics: list[dict[str, Any]] = []
+        self._diagnostic_keys: set[tuple[str, str, str]] = set()
         self.pack_hash = self._hash_source()
         if self.source.is_file():
             try:
@@ -284,8 +286,36 @@ class ResourcePackSource:
         return values[-1]
 
     def select_models(self, canonical_state: str, coordinate: tuple[int, int, int], seed: int = 0) -> list[ModelInstance]:
+        requested_state = canonical_state
+        migration = migrate_asset_state(canonical_state)
+        if migration is not None:
+            canonical_state = migration.target_state
+            diagnostic = {
+                "code": "LEGACY_ID_MAPPED",
+                "source_state": migration.source_state,
+                "target_state": migration.target_state,
+                "migration_table": migration.table_version,
+            }
+            key = (diagnostic["code"], migration.source_state, migration.target_state)
+            if key not in self._diagnostic_keys:
+                self._diagnostic_keys.add(key)
+                self.diagnostics.append(diagnostic)
         namespace, block, properties = self._state_parts(canonical_state)
-        blockstate = self.read_json(f"{namespace}/blockstates/{block}.json")
+        try:
+            blockstate = self.read_json(f"{namespace}/blockstates/{block}.json")
+        except AppError as exc:
+            if migration is None:
+                raise
+            raise AppError(
+                "UNMAPPED_LEGACY_ID",
+                "The legacy block ID has a migration, but its target asset is unavailable.",
+                {
+                    "source_state": requested_state,
+                    "target_state": canonical_state,
+                    "migration_table": migration.table_version,
+                },
+                31,
+            ) from exc
         selected: list[ModelInstance] = []
         variants = blockstate.get("variants")
         if isinstance(variants, dict):

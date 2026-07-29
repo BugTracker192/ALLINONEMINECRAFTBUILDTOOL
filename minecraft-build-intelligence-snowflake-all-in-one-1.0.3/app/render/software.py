@@ -37,6 +37,7 @@ class RenderDiagnostics:
     texture_cache_hits: int = 0
     fallback_count: int = 0
     unsupported_models: list[dict[str, Any]] = field(default_factory=list)
+    entity_rendered_models: list[dict[str, Any]] = field(default_factory=list)
     fallbacks: list[dict[str, Any]] = field(default_factory=list)
     asset_diagnostics: list[dict[str, Any]] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
@@ -158,6 +159,117 @@ def _checker_texture() -> np.ndarray:
 
 _MISSING_TEXTURE = _checker_texture()
 
+_ENTITY_RENDERED_SUFFIXES = (
+    "_banner",
+    "_bed",
+    "_head",
+    "_shulker_box",
+    "_sign",
+    "_skull",
+    "_wall_banner",
+    "_wall_head",
+    "_wall_sign",
+    "_wall_skull",
+)
+
+_DYE_RGB: dict[str, tuple[int, int, int]] = {
+    "white": (249, 255, 254),
+    "orange": (249, 128, 29),
+    "magenta": (199, 78, 189),
+    "light_blue": (58, 179, 218),
+    "yellow": (254, 216, 61),
+    "lime": (128, 199, 31),
+    "pink": (243, 139, 170),
+    "gray": (71, 79, 82),
+    "light_gray": (157, 157, 151),
+    "cyan": (22, 156, 156),
+    "purple": (137, 50, 184),
+    "blue": (60, 68, 170),
+    "brown": (131, 84, 50),
+    "green": (94, 124, 22),
+    "red": (176, 46, 38),
+    "black": (29, 29, 33),
+}
+
+_LEGACY_BANNER_PATTERNS: dict[str, str] = {
+    "b": "base",
+    "bl": "square_bottom_left",
+    "br": "square_bottom_right",
+    "tl": "square_top_left",
+    "tr": "square_top_right",
+    "bs": "stripe_bottom",
+    "ts": "stripe_top",
+    "ls": "stripe_left",
+    "rs": "stripe_right",
+    "cs": "stripe_center",
+    "ms": "stripe_middle",
+    "drs": "stripe_downright",
+    "dls": "stripe_downleft",
+    "ss": "small_stripes",
+    "cr": "cross",
+    "sc": "straight_cross",
+    "ld": "diagonal_left",
+    "rud": "diagonal_up_right",
+    "lud": "diagonal_up_left",
+    "rd": "diagonal_right",
+    "vh": "half_vertical",
+    "vhr": "half_vertical_right",
+    "hh": "half_horizontal",
+    "hhb": "half_horizontal_bottom",
+    "bo": "border",
+    "cbo": "curly_border",
+    "gra": "gradient",
+    "gru": "gradient_up",
+    "bri": "bricks",
+    "glb": "globe",
+    "cre": "creeper",
+    "sku": "skull",
+    "flo": "flower",
+    "moj": "mojang",
+    "pig": "piglin",
+}
+
+
+def _requires_entity_renderer(block_name: str) -> bool:
+    return (
+        block_name == "shulker_box"
+        or block_name.endswith(_ENTITY_RENDERED_SUFFIXES)
+    )
+
+
+def _dye_name(block_name: str) -> str:
+    for name in sorted(_DYE_RGB, key=len, reverse=True):
+        if block_name == name or block_name.startswith(f"{name}_"):
+            return name
+    return "white"
+
+
+def _entity_rotation(entry: PaletteEntry) -> int:
+    facing = entry.properties.get("facing")
+    if facing is not None:
+        return {"north": 0, "east": 90, "south": 180, "west": 270}.get(facing, 0)
+    return int(round(int(entry.properties.get("rotation", "0") or 0) * 22.5)) % 360
+
+
+def _box(
+    minimum: tuple[float, float, float],
+    maximum: tuple[float, float, float],
+    texture: str,
+    *,
+    uv: dict[str, list[float]] | None = None,
+) -> dict[str, Any]:
+    faces: dict[str, dict[str, Any]] = {}
+    for face in ("down", "up", "north", "south", "west", "east"):
+        face_payload: dict[str, Any] = {"texture": texture}
+        if uv is not None and face in uv:
+            face_payload["uv"] = uv[face]
+        faces[face] = face_payload
+    return {
+        "from": [float(value) for value in minimum],
+        "to": [float(value) for value in maximum],
+        "faces": faces,
+    }
+
 
 class SoftwareRenderer:
     def __init__(
@@ -176,8 +288,184 @@ class SoftwareRenderer:
         self.seed = seed
         self._texture_arrays: dict[tuple[str, str], np.ndarray] = {}
         self._model_cache: dict[tuple[str, tuple[int, int, int]], list[tuple[list[Quad], dict[str, str], bool]]] = {}
+        self._entity_model_diagnostics: dict[tuple[str, tuple[int, int, int]], dict[str, Any]] = {}
         self._palette = document.palette_by_id()
         self._region_names, self._regions = _region_ids(document)
+        self._block_entities = {entity.position: entity for entity in document.block_entities}
+
+    @staticmethod
+    def _tint_entity_layer(image: np.ndarray, color: tuple[int, int, int]) -> np.ndarray:
+        result = image.copy()
+        luminance = result[..., :3].astype(np.float32) / 255.0
+        dye = np.asarray(color, dtype=np.float32)[None, None, :]
+        result[..., :3] = np.clip(luminance * dye, 0, 255).astype(np.uint8)
+        return result
+
+    def _banner_texture(self, entry: PaletteEntry, position: IntVector3) -> tuple[str, tuple[str, ...]]:
+        assert self.pack is not None
+        dye_name = _dye_name(entry.block_name)
+        base = np.asarray(self.pack.texture("minecraft", "entity/banner/base"), dtype=np.uint8)
+        composed = self._tint_entity_layer(base, _DYE_RGB[dye_name])
+        applied = [f"minecraft:entity/banner/base@{dye_name}"]
+        block_entity = self._block_entities.get(position)
+        raw_patterns = block_entity.data.get("Patterns", block_entity.data.get("patterns", [])) if block_entity else []
+        if isinstance(raw_patterns, list):
+            for raw in raw_patterns:
+                if not isinstance(raw, dict):
+                    continue
+                pattern_value = raw.get("Pattern", raw.get("pattern"))
+                if isinstance(pattern_value, dict):
+                    pattern_value = pattern_value.get("value")
+                if not isinstance(pattern_value, str):
+                    continue
+                pattern_name = pattern_value.split(":", 1)[-1]
+                pattern_name = _LEGACY_BANNER_PATTERNS.get(pattern_name, pattern_name)
+                color_value = raw.get("Color", raw.get("color", "white"))
+                if isinstance(color_value, int):
+                    legacy_dyes = tuple(_DYE_RGB)
+                    color_name = legacy_dyes[color_value % len(legacy_dyes)]
+                else:
+                    color_name = str(color_value).split(":", 1)[-1]
+                color = _DYE_RGB.get(color_name, _DYE_RGB["white"])
+                try:
+                    mask = np.asarray(
+                        self.pack.texture("minecraft", f"entity/banner/{pattern_name}"),
+                        dtype=np.uint8,
+                    )
+                except AppError:
+                    continue
+                if mask.shape != composed.shape:
+                    continue
+                layer = self._tint_entity_layer(mask, color)
+                alpha = layer[..., 3:4].astype(np.float32) / 255.0
+                composed[..., :3] = np.clip(
+                    layer[..., :3].astype(np.float32) * alpha
+                    + composed[..., :3].astype(np.float32) * (1.0 - alpha),
+                    0,
+                    255,
+                ).astype(np.uint8)
+                composed[..., 3] = np.maximum(composed[..., 3], layer[..., 3])
+                applied.append(f"minecraft:entity/banner/{pattern_name}@{color_name}")
+        digest = hashlib.sha256(
+            entry.canonical_state.encode("utf-8")
+            + b"\0"
+            + json.dumps(raw_patterns, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:20]
+        resource = f"generated/entity/banner/{digest}"
+        self._texture_arrays[("minecraft", resource)] = composed
+        return resource, tuple(applied)
+
+    def _entity_model(
+        self,
+        entry: PaletteEntry,
+        position: IntVector3,
+    ) -> tuple[ResolvedModel, ModelInstance, tuple[str, ...]] | None:
+        """Resolve block-entity geometry and entity-atlas textures.
+
+        Vanilla deliberately supplies empty ``builtin/entity`` block models for
+        these states.  The software renderer uses compact, deterministic proxy
+        meshes with the real entity texture atlases, preserving semantic
+        coordinate identity while making banners, skulls, signs, beds and
+        shulker boxes visually distinguishable.
+        """
+        block = entry.block_name
+        rotation = _entity_rotation(entry)
+        if block.endswith("_banner"):
+            entity_texture, applied = self._banner_texture(entry, position)
+            cloth_uv = {
+                "north": [0.25, 0.25, 5.25, 10.25],
+                "south": [0.25, 0.25, 5.25, 10.25],
+            }
+            model = ResolvedModel(
+                (
+                    _box((3, 0, 14.75), (13, 15, 15.25), "#entity", uv=cloth_uv),
+                    _box((2, 14.5, 14), (14, 16, 16), "#wood"),
+                ),
+                {
+                    "entity": f"minecraft:{entity_texture}",
+                    "wood": "minecraft:block/oak_planks",
+                },
+                False,
+                ("builtin:entity/banner",),
+            )
+            return model, ModelInstance("builtin:entity/banner", y_rotation=rotation), applied
+        if block.endswith(("_skull", "_head")):
+            head_kind = block
+            for suffix in ("_wall_skull", "_wall_head", "_skull", "_head"):
+                if head_kind.endswith(suffix):
+                    head_kind = head_kind[: -len(suffix)]
+                    break
+            texture = {
+                "skeleton": "entity/skeleton/skeleton",
+                "wither_skeleton": "entity/skeleton/wither_skeleton",
+                "zombie": "entity/zombie/zombie",
+                "creeper": "entity/creeper/creeper",
+                "piglin": "entity/piglin/piglin",
+                "dragon": "entity/enderdragon/dragon",
+                "player": "entity/player/wide/steve",
+            }.get(head_kind, "entity/skeleton/skeleton")
+            head_uv = {
+                "north": [2, 4, 4, 8],
+                "south": [6, 4, 8, 8],
+                "west": [0, 4, 2, 8],
+                "east": [4, 4, 6, 8],
+                "up": [2, 0, 4, 4],
+                "down": [4, 0, 6, 4],
+            }
+            wall = "_wall_" in block
+            minimum = (4, 4, 8) if wall else (4, 0, 4)
+            maximum = (12, 12, 16) if wall else (12, 8, 12)
+            model = ResolvedModel(
+                (_box(minimum, maximum, "#entity", uv=head_uv),),
+                {"entity": f"minecraft:{texture}"},
+                False,
+                ("builtin:entity/skull",),
+            )
+            return model, ModelInstance("builtin:entity/skull", y_rotation=rotation), (f"minecraft:{texture}",)
+        if block == "shulker_box" or block.endswith("_shulker_box"):
+            color = _dye_name(block)
+            suffix = "" if block == "shulker_box" else f"_{color}"
+            texture = f"entity/shulker/shulker{suffix}"
+            model = ResolvedModel(
+                (_box((0, 0, 0), (16, 16, 16), "#entity"),),
+                {"entity": f"minecraft:{texture}"},
+                False,
+                ("builtin:entity/shulker_box",),
+            )
+            return model, ModelInstance("builtin:entity/shulker_box", y_rotation=rotation), (f"minecraft:{texture}",)
+        if block.endswith("_bed"):
+            color = _dye_name(block)
+            texture = f"entity/bed/{color}"
+            model = ResolvedModel(
+                (_box((0, 3, 0), (16, 9, 16), "#entity"),),
+                {"entity": f"minecraft:{texture}"},
+                False,
+                ("builtin:entity/bed",),
+            )
+            return model, ModelInstance("builtin:entity/bed", y_rotation=rotation), (f"minecraft:{texture}",)
+        if block.endswith(("_sign", "_wall_sign")):
+            wood = block
+            for suffix in ("_wall_hanging_sign", "_hanging_sign", "_wall_sign", "_sign"):
+                if wood.endswith(suffix):
+                    wood = wood[: -len(suffix)]
+                    break
+            texture = f"entity/signs/{wood}"
+            wall = "_wall_" in block
+            if wall:
+                plate = (2, 4, 14.25), (14, 13, 15.75)
+            else:
+                plate = (2, 7, 7.25), (14, 16, 8.75)
+            elements = [_box(plate[0], plate[1], "#entity")]
+            if not wall:
+                elements.append(_box((7, 0, 7), (9, 8, 9), "#entity"))
+            model = ResolvedModel(
+                tuple(elements),
+                {"entity": f"minecraft:{texture}"},
+                False,
+                ("builtin:entity/sign",),
+            )
+            return model, ModelInstance("builtin:entity/sign", y_rotation=rotation), (f"minecraft:{texture}",)
+        return None
 
     def _texture(self, textures: dict[str, str], reference: str | None, namespace: str, diagnostics: RenderDiagnostics) -> np.ndarray | None:
         if self.pack is None or reference is None:
@@ -204,6 +492,9 @@ class SoftwareRenderer:
     def _block_models(self, entry: PaletteEntry, position: IntVector3, diagnostics: RenderDiagnostics) -> list[tuple[list[Quad], dict[str, str], bool]]:
         cache_key = (entry.canonical_state, position.as_tuple())
         if cache_key in self._model_cache:
+            entity_diagnostic = self._entity_model_diagnostics.get(cache_key)
+            if entity_diagnostic is not None:
+                diagnostics.entity_rendered_models.append(dict(entity_diagnostic))
             return self._model_cache[cache_key]
         if self.pack is None:
             result = [(fallback_cube(), {}, True)]
@@ -241,7 +532,23 @@ class SoftwareRenderer:
                 model = self.pack.resolve_model(instance.model)
                 quads = model_quads(model, instance)
                 if not quads:
-                    raise AppError("MODEL_NO_ELEMENTS", "Resolved model has no static elements.", {"model": instance.model}, 31)
+                    entity = self._entity_model(entry, position) if _requires_entity_renderer(entry.block_name) else None
+                    if entity is None:
+                        raise AppError("MODEL_NO_ELEMENTS", "Resolved model has no static elements.", {"model": instance.model}, 31)
+                    entity_model, entity_instance, texture_paths = entity
+                    entity_quads = model_quads(entity_model, entity_instance)
+                    entity_diagnostic = {
+                        "code": "ENTITY_RENDERED",
+                        "state": entry.canonical_state,
+                        "coordinate": position.as_tuple(),
+                        "representation": "entity_texture_proxy",
+                        "textures": list(texture_paths),
+                        "tier": 2,
+                    }
+                    diagnostics.entity_rendered_models.append(entity_diagnostic)
+                    self._entity_model_diagnostics[cache_key] = entity_diagnostic
+                    result.append((entity_quads, entity_model.textures, False))
+                    continue
                 result.append((quads, model.textures, False))
         except Exception as exc:
             if self.strict_textures:
@@ -249,9 +556,25 @@ class SoftwareRenderer:
                     raise
                 raise AppError("MODEL_RESOLUTION_FAILED", "Block model resolution failed.", {"state": entry.canonical_state}, 31) from exc
             diagnostics.fallback_count += 1
-            item = {"state": entry.canonical_state, "coordinate": position.as_tuple(), "reason": str(exc), "tier": 0}
-            diagnostics.unsupported_models.append(item)
-            diagnostics.fallbacks.append({"type": "model_fallback", **item})
+            entity_rendered = (
+                _requires_entity_renderer(entry.block_name)
+                and isinstance(exc, AppError)
+                and exc.code == "MODEL_NO_ELEMENTS"
+            )
+            item = {
+                "code": "ENTITY_RENDERED" if entity_rendered else "MODEL_FALLBACK",
+                "state": entry.canonical_state,
+                "coordinate": position.as_tuple(),
+                "reason": str(exc),
+                "tier": 0,
+            }
+            if entity_rendered:
+                item["representation"] = "symbolic_geometry_proxy"
+                diagnostics.entity_rendered_models.append(item)
+                diagnostics.fallbacks.append({"type": "entity_rendered_proxy", **item})
+            else:
+                diagnostics.unsupported_models.append(item)
+                diagnostics.fallbacks.append({"type": "model_fallback", **item})
             result = [(fallback_cube(), {}, True)]
         self._model_cache[cache_key] = result
         return result
@@ -397,8 +720,9 @@ class SoftwareRenderer:
         lighting_preset: str,
         changed_coordinates: frozenset[IntVector3],
         issue_coordinates: Mapping[IntVector3, int],
+        screen_offset: tuple[int, int] = (0, 0),
     ) -> bool:
-        p = triangle.screen
+        p = triangle.screen - np.asarray(screen_offset, dtype=np.float64)[None, :]
         minimum_x = max(0, int(math.floor(float(p[:, 0].min()))))
         maximum_x = min(color.shape[1] - 1, int(math.ceil(float(p[:, 0].max()))))
         minimum_y = max(0, int(math.floor(float(p[:, 1].min()))))
@@ -643,6 +967,456 @@ class SoftwareRenderer:
             png_path,
             manifest_path,
             semantic_root / maps["metadata"],
+            snapshot_id,
+            manifest,
+            asdict(diagnostics),
+        )
+
+    def render_tiled(
+        self,
+        output_root: str | Path,
+        *,
+        camera: CameraSpec | None = None,
+        crop: IntBoundingBox | None = None,
+        size: tuple[int, int] = (4096, 4096),
+        tile_size: int = 512,
+        resume: bool = False,
+        mode: str = "textured",
+        lighting_preset: str = "analysis-neutral",
+        background: tuple[int, int, int, int] = (0, 0, 0, 0),
+        changed_coordinates: frozenset[IntVector3] = frozenset(),
+        issue_coordinates: Mapping[IntVector3, int] | None = None,
+        include_regions: Iterable[str] = (),
+        include_states: Iterable[str] = (),
+        exclude_states: Iterable[str] = (),
+        name: str | None = None,
+    ) -> RenderResult:
+        """Render exact screen-space tiles with durable per-tile checkpoints.
+
+        Geometry and camera transforms are identical to :meth:`render`.  Only
+        raster buffers are tiled; semantic binary maps are disk-backed memmaps,
+        so peak RAM scales with one tile instead of the full output resolution.
+        A tile marker is written only after its PNG and every semantic slice are
+        flushed, making ``--resume`` safe after an interrupted process.
+        """
+        started = time.perf_counter()
+        width, height = size
+        if (
+            width < 1
+            or height < 1
+            or width > self.config.max_render_size
+            or height > self.config.max_render_size
+        ):
+            raise AppError(
+                "RENDER_SIZE_LIMIT",
+                "Render size is outside configured bounds.",
+                {"size": size},
+                30,
+            )
+        if tile_size < 32 or tile_size > self.config.max_render_size:
+            raise AppError(
+                "RENDER_TILE_SIZE",
+                "Tile size must be between 32 and the configured render-size limit.",
+                {"tile_size": tile_size},
+                2,
+            )
+
+        bounds = _crop_document_bounds(self.document, crop)
+        camera = camera or CameraSpec()
+        transform = camera_transform(bounds, size, camera)
+        use_textures = mode == "textured" and self.pack is not None
+        diagnostics = RenderDiagnostics(
+            "software-textured-tiled" if use_textures else "software-flat-tiled",
+            2 if use_textures else 0,
+        )
+        issue_coordinates = issue_coordinates or {}
+        include_regions_set = frozenset(str(item) for item in include_regions)
+        include_states_set = frozenset(str(item) for item in include_states)
+        exclude_states_set = frozenset(str(item) for item in exclude_states)
+        if mode == "textured" and self.pack is None:
+            diagnostics.limitations.append(
+                "No resource pack was supplied; deterministic flat colors were used."
+            )
+
+        config_payload = {
+            "build_hash": self.document.content_hash,
+            "camera": asdict(camera),
+            "bounds": {
+                "min": bounds.min.as_tuple(),
+                "max": bounds.max.as_tuple(),
+            },
+            "size": size,
+            "mode": diagnostics.render_mode,
+            "lighting": lighting_preset,
+            "pack_hash": self.pack.pack_hash if self.pack is not None else None,
+            "filters": {
+                "regions": sorted(include_regions_set),
+                "include_states": sorted(include_states_set),
+                "exclude_states": sorted(exclude_states_set),
+            },
+            "issue_coordinates_hash": hashlib.sha256(
+                json.dumps(
+                    sorted(
+                        (point.as_tuple(), int(code))
+                        for point, code in issue_coordinates.items()
+                    ),
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+            "renderer": "python-cpu-rasterizer-v1-tiled",
+            "tile_size": tile_size,
+        }
+        snapshot_id = "snap_" + hashlib.sha256(
+            json.dumps(
+                config_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()[:24]
+        root = Path(output_root)
+        snapshots = root / "snapshots"
+        semantic_root = root / "semantic_maps"
+        checkpoint_root = root / "render_checkpoints" / snapshot_id
+        snapshots.mkdir(parents=True, exist_ok=True)
+        semantic_root.mkdir(parents=True, exist_ok=True)
+        checkpoint_root.mkdir(parents=True, exist_ok=True)
+        stem = name or snapshot_id
+        png_path = snapshots / f"{stem}.png"
+        manifest_path = snapshots / f"{stem}.manifest.json"
+        semantic_metadata_path = semantic_root / f"{snapshot_id}.metadata.json"
+        if (
+            resume
+            and png_path.is_file()
+            and manifest_path.is_file()
+            and semantic_metadata_path.is_file()
+        ):
+            manifest = json.loads(manifest_path.read_text("utf-8"))
+            tile_count = (
+                math.ceil(width / tile_size)
+                * math.ceil(height / tile_size)
+            )
+            manifest.setdefault("tiled", {})["completed_tiles"] = tile_count
+            manifest["tiled"]["resumed_tiles"] = tile_count
+            manifest["tiled"]["resume_source"] = "finalized-output"
+            atomic_write_json(manifest_path, manifest)
+            persisted = dict(manifest.get("diagnostics", {}))
+            persisted["duration_seconds"] = round(
+                time.perf_counter() - started,
+                6,
+            )
+            return RenderResult(
+                png_path,
+                manifest_path,
+                semantic_metadata_path,
+                snapshot_id,
+                manifest,
+                persisted,
+            )
+
+        original_pack = self.pack
+        if not use_textures:
+            self.pack = None
+            self._model_cache.clear()
+        try:
+            opaque, translucent = self._triangles(
+                transform,
+                bounds,
+                diagnostics,
+                changed_coordinates,
+                issue_coordinates,
+                include_regions_set,
+                include_states_set,
+                exclude_states_set,
+            )
+        finally:
+            self.pack = original_pack
+
+        array_specs: dict[str, tuple[np.dtype[Any], tuple[int, ...], Any]] = {
+            "palette": (np.dtype("<u4"), (height, width), NO_PALETTE),
+            "coordinate": (
+                np.dtype("<i4"),
+                (height, width, 3),
+                NO_COORDINATE,
+            ),
+            "depth": (np.dtype("<f4"), (height, width), np.inf),
+            "normal": (np.dtype("i1"), (height, width, 3), 0),
+            "region": (
+                np.dtype("<u2"),
+                (height, width),
+                np.iinfo(np.uint16).max,
+            ),
+            "occupancy": (np.dtype("u1"), (height, width), 0),
+            "changed": (np.dtype("u1"), (height, width), 0),
+            "issue": (np.dtype("u1"), (height, width), 0),
+        }
+        mapped: dict[str, np.memmap[Any, Any]] = {}
+        all_maps_reused = True
+        for map_name, (dtype, shape, fill_value) in array_specs.items():
+            path = semantic_root / f"{snapshot_id}.{map_name}.bin"
+            expected_bytes = int(np.prod(shape)) * dtype.itemsize
+            reuse = resume and path.is_file() and path.stat().st_size == expected_bytes
+            all_maps_reused = all_maps_reused and reuse
+            mapped_array = np.memmap(
+                path,
+                dtype=dtype,
+                mode="r+" if reuse else "w+",
+                shape=shape,
+                order="C",
+            )
+            if not reuse:
+                mapped_array[...] = fill_value
+                mapped_array.flush()
+            mapped[map_name] = mapped_array
+
+        final_image = Image.new("RGBA", (width, height), background)
+        palette_image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        completed_tiles = 0
+        resumed_tiles = 0
+        tile_count = (
+            math.ceil(width / tile_size)
+            * math.ceil(height / tile_size)
+        )
+        for y0 in range(0, height, tile_size):
+            y1 = min(height, y0 + tile_size)
+            for x0 in range(0, width, tile_size):
+                x1 = min(width, x0 + tile_size)
+                tile_key = f"x{x0:06d}_y{y0:06d}_{x1 - x0}x{y1 - y0}"
+                tile_path = checkpoint_root / f"{tile_key}.png"
+                marker_path = checkpoint_root / f"{tile_key}.done.json"
+                tile_complete = False
+                if (
+                    resume
+                    and all_maps_reused
+                    and tile_path.is_file()
+                    and marker_path.is_file()
+                ):
+                    try:
+                        marker = json.loads(marker_path.read_text("utf-8"))
+                        tile_complete = (
+                            marker.get("snapshot_id") == snapshot_id
+                            and marker.get("sha256")
+                            == hashlib.sha256(tile_path.read_bytes()).hexdigest()
+                        )
+                    except (OSError, json.JSONDecodeError):
+                        tile_complete = False
+                if tile_complete:
+                    final_image.paste(
+                        Image.open(tile_path).convert("RGBA"),
+                        (x0, y0),
+                    )
+                    resumed_tiles += 1
+                else:
+                    tile_width = x1 - x0
+                    tile_height = y1 - y0
+                    color = np.empty(
+                        (tile_height, tile_width, 4),
+                        dtype=np.uint8,
+                    )
+                    color[...] = background
+                    zbuffer = np.full(
+                        (tile_height, tile_width),
+                        np.inf,
+                        dtype=np.float32,
+                    )
+                    semantics = SemanticBuffers.create(tile_width, tile_height)
+                    for triangle in opaque:
+                        if (
+                            float(triangle.screen[:, 0].max()) < x0
+                            or float(triangle.screen[:, 1].max()) < y0
+                            or float(triangle.screen[:, 0].min()) >= x1
+                            or float(triangle.screen[:, 1].min()) >= y1
+                        ):
+                            continue
+                        if self._raster_triangle(
+                            triangle,
+                            color,
+                            zbuffer,
+                            semantics,
+                            translucent=False,
+                            lighting_preset=lighting_preset,
+                            changed_coordinates=changed_coordinates,
+                            issue_coordinates=issue_coordinates,
+                            screen_offset=(x0, y0),
+                        ):
+                            diagnostics.triangles_rasterized += 1
+                    for triangle in translucent:
+                        if (
+                            float(triangle.screen[:, 0].max()) < x0
+                            or float(triangle.screen[:, 1].max()) < y0
+                            or float(triangle.screen[:, 0].min()) >= x1
+                            or float(triangle.screen[:, 1].min()) >= y1
+                        ):
+                            continue
+                        if self._raster_triangle(
+                            triangle,
+                            color,
+                            zbuffer,
+                            semantics,
+                            translucent=True,
+                            lighting_preset=lighting_preset,
+                            changed_coordinates=changed_coordinates,
+                            issue_coordinates=issue_coordinates,
+                            screen_offset=(x0, y0),
+                        ):
+                            diagnostics.triangles_rasterized += 1
+                    mapped["palette"][y0:y1, x0:x1] = semantics.palette
+                    mapped["coordinate"][y0:y1, x0:x1] = semantics.coordinates
+                    mapped["depth"][y0:y1, x0:x1] = semantics.depth
+                    mapped["normal"][y0:y1, x0:x1] = semantics.normals
+                    mapped["region"][y0:y1, x0:x1] = semantics.regions
+                    mapped["occupancy"][y0:y1, x0:x1] = semantics.occupancy
+                    mapped["changed"][y0:y1, x0:x1] = semantics.changed
+                    mapped["issue"][y0:y1, x0:x1] = semantics.issues
+                    for mapped_array in mapped.values():
+                        mapped_array.flush()
+                    tile_image = Image.fromarray(color, "RGBA")
+                    tile_image.save(
+                        tile_path,
+                        format="PNG",
+                        compress_level=9,
+                        optimize=False,
+                    )
+                    atomic_write_json(
+                        marker_path,
+                        {
+                            "schema": "mbi.render-tile-checkpoint.v1",
+                            "snapshot_id": snapshot_id,
+                            "bounds": [x0, y0, x1, y1],
+                            "sha256": hashlib.sha256(
+                                tile_path.read_bytes()
+                            ).hexdigest(),
+                        },
+                    )
+                    final_image.paste(tile_image, (x0, y0))
+                palette_values = np.asarray(
+                    mapped["palette"][y0:y1, x0:x1]
+                )
+                palette_rgba = np.zeros(
+                    (y1 - y0, x1 - x0, 4),
+                    dtype=np.uint8,
+                )
+                occupied = palette_values != NO_PALETTE
+                palette_rgba[..., 0] = (
+                    (palette_values >> 16) & 0xFF
+                ).astype(np.uint8)
+                palette_rgba[..., 1] = (
+                    (palette_values >> 8) & 0xFF
+                ).astype(np.uint8)
+                palette_rgba[..., 2] = (palette_values & 0xFF).astype(
+                    np.uint8
+                )
+                palette_rgba[..., 3] = occupied.astype(np.uint8) * 255
+                palette_image.paste(
+                    Image.fromarray(palette_rgba, "RGBA"),
+                    (x0, y0),
+                )
+                completed_tiles += 1
+
+        final_image.save(
+            png_path,
+            format="PNG",
+            compress_level=9,
+            optimize=False,
+        )
+        palette_png = f"{snapshot_id}.palette.png"
+        palette_image.save(
+            semantic_root / palette_png,
+            format="PNG",
+            compress_level=9,
+            optimize=False,
+        )
+        semantic_metadata: dict[str, Any] = {
+            "schema": "mbi.semantic-maps.v1",
+            "storage": "disk-backed-tiled",
+            "tile_size": tile_size,
+            "arrays": {},
+        }
+        maps: dict[str, str] = {}
+        for map_name, (dtype, shape, _) in array_specs.items():
+            filename = f"{snapshot_id}.{map_name}.bin"
+            maps[map_name] = filename
+            semantic_metadata["arrays"][map_name] = {
+                "path": filename,
+                "dtype": dtype.str,
+                "shape": list(shape),
+                "order": "C",
+                "endianness": "little",
+            }
+        atomic_write_json(semantic_metadata_path, semantic_metadata)
+        maps["palette_png"] = palette_png
+        maps["metadata"] = semantic_metadata_path.name
+
+        diagnostics.duration_seconds = round(
+            time.perf_counter() - started,
+            6,
+        )
+        diagnostics.peak_estimated_working_memory = (
+            tile_size * tile_size * (4 + 4 + 12 + 4 + 3 + 2 + 1 + 1)
+            + (len(opaque) + len(translucent)) * 640
+            + width * height * 8
+        )
+        diagnostics.limitations.append(
+            "Intersecting translucent surfaces use deterministic stable "
+            "back-to-front triangle sorting."
+        )
+        if self.pack is not None:
+            for item in self.pack.diagnostics:
+                if (
+                    item.get("code") != "ANIMATED_TEXTURE_FIRST_FRAME"
+                    and item not in diagnostics.asset_diagnostics
+                ):
+                    diagnostics.asset_diagnostics.append(item)
+        persisted_diagnostics = asdict(diagnostics)
+        persisted_diagnostics.pop("duration_seconds", None)
+        manifest = {
+            "snapshot_id": snapshot_id,
+            "build_version_id": "ver_" + self.document.content_hash[:20],
+            "type": "orthographic",
+            "direction": name,
+            "resolution": [width, height],
+            "coordinate_space": "document",
+            "visible_bounds": {
+                "min": list(bounds.min.as_tuple()),
+                "max": list(bounds.max.as_tuple()),
+            },
+            "camera": asdict(camera),
+            "view_matrix": list(transform.view_matrix),
+            "projection_matrix": list(transform.projection_matrix),
+            "lighting_preset": lighting_preset,
+            "render_mode": diagnostics.render_mode,
+            "render_tier": diagnostics.render_tier,
+            "resource_pack_hash": (
+                self.pack.pack_hash if self.pack is not None else None
+            ),
+            "renderer_version": "python-cpu-rasterizer-v1-tiled",
+            "background": list(background),
+            "content_hash": hashlib.sha256(png_path.read_bytes()).hexdigest(),
+            "semantic_maps": {
+                key: f"../semantic_maps/{value}"
+                for key, value in maps.items()
+            },
+            "filters": config_payload["filters"],
+            "issue_categories": {
+                "0": "none",
+                "1": "renderer-fallback",
+                "2-255": "caller-defined-grounded-analysis-category",
+            },
+            "tiled": {
+                "schema": "mbi.tiled-render.v1",
+                "tile_size": tile_size,
+                "tile_count": tile_count,
+                "completed_tiles": completed_tiles,
+                "resumed_tiles": resumed_tiles,
+                "checkpoint_directory": str(checkpoint_root),
+                "exact_screen_space": True,
+            },
+            "diagnostics": persisted_diagnostics,
+        }
+        atomic_write_json(manifest_path, manifest)
+        return RenderResult(
+            png_path,
+            manifest_path,
+            semantic_metadata_path,
             snapshot_id,
             manifest,
             asdict(diagnostics),

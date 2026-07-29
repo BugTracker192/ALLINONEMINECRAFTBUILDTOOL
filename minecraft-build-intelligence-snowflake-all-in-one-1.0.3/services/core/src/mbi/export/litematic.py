@@ -75,8 +75,11 @@ def _region_compound(document: BuildDocument, region: BuildRegion) -> tuple[dict
         if not region.bounds.contains(item.position):
             continue
         raw = dict(item.data)
-        raw["Pos"] = list(item.position.as_tuple())
-        if item.namespaced_id and "id" not in raw:
+        # Litematica stores tile-entity positions relative to the region's
+        # source corner, including negative offsets for negatively sized
+        # selections. Canonical coordinates remain document-global.
+        raw["Pos"] = list((item.position - region.source_position).as_tuple())
+        if item.namespaced_id and "id" not in raw and "Id" not in raw:
             raw["id"] = item.namespaced_id
         block_entities.append(typed_compound(raw))
 

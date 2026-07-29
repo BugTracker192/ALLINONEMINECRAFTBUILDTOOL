@@ -5,7 +5,7 @@ backend-path = ["."]
 
 [project]
 name = "minecraft-build-intelligence"
-version = "1.0.3"
+version = "1.1.0"
 description = "Offline Minecraft Java build intelligence, CPU rendering, AI tooling, editing, and verified export platform"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 ai = ["httpx>=0.27,<1"]
 security = ["cryptography>=42,<47"]
-test = ["pytest>=8,<10", "hypothesis>=6.100,<7"]
+test = ["pytest>=8,<10", "hypothesis>=6.100,<7", "pytest-asyncio>=1,<2"]
 
 [project.scripts]
 mbi = "app.cli:main"
@@ -33,6 +33,9 @@ exclude = ["apps*", "packages*", "services.core.tests*"]
 pythonpath = [".", "services/core/src"]
 testpaths = ["services/core/tests", "tests"]
 addopts = "-ra --strict-markers"
+markers = [
+  "asyncio: run a coroutine test using pytest-asyncio",
+]
 
 [tool.ruff]
 line-length = 110

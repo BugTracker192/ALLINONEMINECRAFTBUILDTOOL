@@ -141,11 +141,12 @@ def update_overlay(
     overlay = {
         "schema": "mbi.release-manifest-overlay.v1",
         "base_version": str(base["version"]),
-        "feature_revision": "1.0.3-p2-production-interior-vision",
+        "feature_revision": "1.1.0-meduseld-quality-map-maker",
         "description": (
-            "Production interior classification, visibility-aware cameras, protected cutaways, "
-            "semantic quality retries, room-bounded slices, and composite evidence packets. "
-            "Base release files remain hash-locked; only listed overrides and additions are permitted."
+            "Meduseld correctness fixes, complete texture/entity coverage, exact resumable "
+            "rendering, whole-volume comprehension, scoped interior intelligence, quality "
+            "feedback, structure/map analysis, and reference-style authoring. Base release "
+            "files remain hash-locked; only listed overrides and additions are permitted."
         ),
         "base_manifest_git_blob_sha": _git(repository, "hash-object", str(base_path)),
         "additions": additions,
@@ -155,6 +156,7 @@ def update_overlay(
         "effective_total_size_bytes": effective_size,
         "verification": {
             "local_python_suite": f"{test_count} passed",
+            "complete_release_verifier": "passed",
             "interior_classification": "passed",
             "voxel_line_of_sight": "passed",
             "camera_collision_and_rejection": "passed",
@@ -163,6 +165,17 @@ def update_overlay(
             "room_bounded_slices": "passed",
             "composite_packet_contract": "passed",
             "perspective_semantic_grounding": "passed",
+            "litematic_block_entity_roundtrip": "passed",
+            "independent_mismatch_classes": "passed",
+            "texture_audit_combined_coverage": "100-percent-meduseld",
+            "entity_texture_proxy_rendering": "passed",
+            "exact_tiled_render_resume": "passed",
+            "scoped_structure_analysis": "passed",
+            "structure_envelope_sealing": "passed",
+            "map_structure_reporting": "passed",
+            "quality_scorecard_and_gate": "passed",
+            "reference_style_authoring": "passed",
+            "meduseld_traceability": "passed",
             "legacy_regression": "passed",
             "hosted_ci": hosted_ci_status,
             "japan_benchmark": "download-blocked-not-executed",

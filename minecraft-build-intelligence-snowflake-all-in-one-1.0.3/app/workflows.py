@@ -12,6 +12,7 @@ from mbi.canonical import BuildDocument, IntBoundingBox, IntVector3
 from mbi.export import export_litematic, export_sponge_v3, verify_round_trip
 from mbi.importer import import_build
 from mbi.patch import PatchEngine
+from mbi.scoping import scoped_document
 
 from app.assets import open_resource_pack
 from app.errors import AppError
@@ -48,23 +49,70 @@ def import_file(source: str | Path, output_root: str | Path) -> BuildDocument:
         raise
 
 
-def analyze_run(run_root: str | Path) -> dict[str, Any]:
+def analyze_run(
+    run_root: str | Path,
+    *,
+    bounds: IntBoundingBox | None = None,
+    lighting_max_cells: int | None = 10_000_000,
+    dark_threshold: int = 7,
+    room_max_cells: int = 20_000_000,
+    manual_rooms: tuple[
+        tuple[IntBoundingBox, IntVector3 | None], ...
+    ] = (),
+    seal_structure_envelope: bool = False,
+) -> dict[str, Any]:
     root = Path(run_root)
-    document = load_document(root)
-    job = JobRecord.create("analysis", {"build": document.content_hash}, {"profile": "full"})
+    source_document = load_document(root)
+    document = scoped_document(source_document, bounds) if bounds is not None else source_document
+    configuration = {
+        "profile": "bounded" if bounds else "full",
+        "bounds": asdict(document.bounds),
+        "lighting_max_cells": lighting_max_cells,
+        "dark_threshold": dark_threshold,
+        "room_max_cells": room_max_cells,
+        "seal_structure_envelope": seal_structure_envelope,
+        "manual_rooms": [
+            {
+                "bounds": asdict(room_bounds),
+                "seed": asdict(seed) if seed is not None else None,
+            }
+            for room_bounds, seed in manual_rooms
+        ],
+    }
+    job = JobRecord.create("analysis", {"build": source_document.content_hash}, configuration)
     job.state = JobState.RUNNING
     job.stage = "analysis"
     job.persist(root)
     try:
-        result = analyze_document(document)
+        result = analyze_document(
+            document,
+            lighting_max_cells=lighting_max_cells,
+            dark_threshold=dark_threshold,
+            room_max_cells=room_max_cells,
+            manual_rooms=manual_rooms,
+            seal_structure_envelope=seal_structure_envelope,
+        )
         payload = {
-            "schema_version": "mbi.analysis.v1",
+            "schema_version": "mbi.analysis.v2",
             "build_version_hash": document.content_hash,
+            "parent_build_version_hash": (
+                source_document.content_hash if bounds is not None else None
+            ),
+            "scope": {
+                "type": "bounds" if bounds is not None else "document",
+                "bounds": asdict(document.bounds),
+                "block_count": len(document.blocks),
+            },
+            "configuration": configuration,
             "algorithms": {
                 "materials": "exact-histogram-v1",
                 "surfaces": "six-neighbor-v1",
                 "components": "configurable-adjacency-v1",
-                "rooms": "outside-flood-fill-v1",
+                "rooms": (
+                    "constructed-column-envelope-seal-v1"
+                    if seal_structure_envelope
+                    else "outside-flood-fill-v1"
+                ),
                 "navigation": "standable-headroom-heuristic-v1",
                 "lighting": "heuristic-emitter-coverage-v1",
                 "facade": "surface-patch-depth-v1",
@@ -309,10 +357,12 @@ def export_run(run_root: str | Path, *, format_name: str, verify: bool = True) -
         "artifact_sha256": hashlib.sha256(data).hexdigest(),
         "block_count_source": len(document.blocks),
         "block_count_reimported": len(reparsed.blocks) if reparsed else None,
-        "coordinate_mismatches": report.mismatch_count if report else None,
-        "state_mismatches": report.mismatch_count if report else None,
-        "block_entity_mismatches": 0 if report and report.valid else None,
-        "entity_mismatches": 0 if report and report.valid else None,
+        "bounds_mismatches": report.bounds_mismatches if report else None,
+        "coordinate_mismatches": report.coordinate_mismatches if report else None,
+        "state_mismatches": report.state_mismatches if report else None,
+        "region_mismatches": report.region_mismatches if report else None,
+        "block_entity_mismatches": report.block_entity_mismatches if report else None,
+        "entity_mismatches": report.entity_mismatches if report else None,
         "accepted_loss": [],
         "messages": list(report.messages) if report else [],
         "hashes": {"source": document.content_hash, "reimported": report.exported_hash if report else None},
@@ -342,7 +392,13 @@ def pipeline(
     }
 
 
-def _patch_from_payload(engine: PatchEngine, document: BuildDocument, payload: dict[str, Any]):
+def _patch_from_payload(
+    engine: PatchEngine,
+    document: BuildDocument,
+    payload: dict[str, Any],
+    *,
+    run_root: str | Path | None = None,
+):
     bounds_raw = payload.get("bounds") or payload.get("intended_bounds") or payload.get("intendedBounds")
     if not isinstance(bounds_raw, dict):
         raise AppError("PATCH_BOUNDS", "Patch requires bounds object.", exit_code=40)
@@ -353,12 +409,19 @@ def _patch_from_payload(engine: PatchEngine, document: BuildDocument, payload: d
         operations = [payload["operation"]]
     if not isinstance(operations, list):
         raise AppError("PATCH_OPERATIONS", "Patch requires operations array.", exit_code=40)
+    normalized_operations = [dict(item) for item in operations]
+    if run_root is not None:
+        from app.authoring import resolve_anchored_operations
+
+        normalized_operations = resolve_anchored_operations(
+            run_root, normalized_operations
+        )
     patch = engine.create_patch(
         str(payload.get("reason", "External agent patch")),
         str(payload.get("author", "external_agent")),
         IntBoundingBox(minimum, maximum),
         int(payload.get("max_affected_blocks", payload.get("maxAffectedBlocks", 100_000))),
-        [dict(item) for item in operations],
+        normalized_operations,
         coordinate_space=str(payload.get("coordinate_space", payload.get("coordinateSpace", "document"))),
         preconditions=list(payload.get("preconditions", [])),
         expected_parent_hash=str(payload.get("expected_parent_hash", payload.get("expectedParentHash", document.content_hash))),
@@ -415,7 +478,7 @@ def patch_action(
     engine = load_patch_engine(root)
     document = engine.active.document
     payload = json.loads(Path(patch_file).read_text("utf-8"))
-    patch = _patch_from_payload(engine, document, payload)
+    patch = _patch_from_payload(engine, document, payload, run_root=root)
     engine.validate(patch)
     preview = engine.preview(patch)
     patch_record = {

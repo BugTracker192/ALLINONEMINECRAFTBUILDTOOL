@@ -14,6 +14,7 @@ from mbi.serialization import document_from_payload, document_to_payload
 from mbi.patch import BuildVersion, PatchEngine
 from mbi.patch.model import RegionLock
 
+from .errors import AppError
 from .storage import atomic_write_bytes, atomic_write_json
 
 
@@ -112,7 +113,17 @@ def clone_run_base(source: str | Path, destination: str | Path) -> Path:
     if source_root == destination_root:
         return destination_root
     if source_root in destination_root.parents:
-        raise ValueError("output run cannot be nested inside the source run")
+        suggestion = source_root.parent / f"{source_root.name}-output"
+        raise AppError(
+            "OUTPUT_NESTED_IN_SOURCE",
+            "The output run cannot be nested inside the source run.",
+            {
+                "source": str(source_root),
+                "output": str(destination_root),
+                "suggested_output": str(suggestion),
+            },
+            2,
+        )
     if not (source_root / "canonical.json").is_file():
         raise FileNotFoundError(f"source run is missing canonical.json: {source_root}")
     initialize_layout(destination_root)

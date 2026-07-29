@@ -44,10 +44,31 @@ python BOOTSTRAP_SNOWFLAKE.py --smoke
 Manual equivalent:
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate        # Windows: .venv\Scripts\activate
+python -m venv /writable/local/scratch/mbi-venv
+. /writable/local/scratch/mbi-venv/bin/activate
 pip install .
 ```
+
+On Snowflake/CoCo stages, do not create a repository-local environment or build
+a wheel on the mounted stage: those filesystems may reject symlinks and
+`zipfile.close()`. Mirror to local scratch and build there:
+
+```bash
+python BOOTSTRAP_SNOWFLAKE.py \
+  --scratch-root /tmp/mbi-scratch \
+  --cache-dir /persistent/mbi-cache \
+  --warm-cache --smoke
+```
+
+The persistent cache stores the hash-verified reconstructed asset and a compact
+source tarball (plus an environment tarball when `--cache-venv` is supplied).
+`pip install -e .` is supported through the bundled PEP 660 backend.
+
+`vendor/wheelhouse/` is optional and may be empty. When it is empty, provide an
+authenticated index with `--index-url`, configure normal pip credentials, or
+explicitly use `--index-url https://pypi.org/simple` where public network access
+is permitted. The bootstrap never claims an empty wheelhouse is an offline
+dependency source.
 
 Optional live provider adapters:
 
@@ -96,9 +117,79 @@ python -m app.cli render ./run --view isometric_ne --size 1536x1536 \
 
 python -m app.cli render ./run --slice y:37 --pixels-per-block 8 --out ./run
 python -m app.cli render ./run --crop 10,20,30,32,24,32 --view isometric_ne --out ./run
+python -m app.cli render ./run --view isometric_ne --fit --zoom 1.2 \
+  --margin 1 --accuracy exact --tile-size 512 --resume --out ./run
 ```
 
 The reusable Python API exposes `app.render.render(...)`, `pixel_to_block(...)`, `block_to_pixel(...)` and exact canonical lookup.
+
+## Quality and map-maker toolkit
+
+Version 1.1.0 adds whole-volume comprehension, scoped/structure analysis,
+quality gates, map-scale reporting, and reference-style authoring:
+
+```bash
+# Whole-volume comprehension and texture gates
+python -m app.cli export-map ./run --format csv --out ./block-map.csv
+python -m app.cli texture-audit ./run --fail-under 100
+python -m app.cli palette-atlas ./run --out ./palette.png
+python -m app.cli contact-sheet ./run \
+  --views isometric_ne,isometric_sw,south,top --out ./contact-sheet.png
+python -m app.cli slice-sweep ./run \
+  --slice y:110..170 --step 6 --montage --out ./sections
+python -m app.cli annotated-render ./run \
+  --view isometric_ne --annotate-materials 8 --out ./annotated.png
+
+# Bounded, manual-room, and detected-structure analysis
+python -m app.cli analyze ./run \
+  --bounds 100,50,100,180,120,180 \
+  --seal-structure-envelope \
+  --lighting-max-cells 0 --out ./bounded-run
+python -m app.cli analyze ./run \
+  --room-bounds 110,55,110,145,75,145 \
+  --room-seed 120,56,120
+python -m app.cli structure inventory ./run
+python -m app.cli structure name ./run STRUCTURE_ID great_hall
+python -m app.cli analyze ./run --structure great_hall --out ./great-hall-run
+python -m app.cli structure analyze-all ./run --resume
+python -m app.cli structure extract ./run great_hall \
+  --format litematic --out ./great-hall-extract
+
+# Site, comparison, LOD, interiors, and quality
+python -m app.cli structure site-plan ./run --out ./site-plan.png
+python -m app.cli structure map-report ./run
+python -m app.cli structure compare ./run house_1 house_2
+python -m app.cli structure render-all ./run --accuracy fast --resume
+python -m app.cli structure interiors ./run --resume
+python -m app.cli quality-report ./run --structure great_hall --fail-under 70
+python -m app.cli quality-report ./run \
+  --from VERSION_A --to VERSION_B
+```
+
+`analyze --structure` automatically enables conservative structure-envelope
+sealing. For caller-supplied bounds, opt in with
+`--seal-structure-envelope`. Manual `--room-bounds`/`--room-seed` uses exact
+seed-and-clip behavior and reports sealed openings and a leak path.
+
+Reference-style authoring uses durable anchors and bounded patch operations:
+
+```bash
+python -m app.cli author style-extract ./run --name rohirric_reference
+python -m app.cli author anchor-set ./run hearth --position 120,56,130
+python -m app.cli author anchor-room ./run north_wall \
+  --room ROOM_ID --face north
+python -m app.cli author anchor-bay ./run east_bay_3 \
+  --structure great_hall --face east --bay-index 3 --bay-count 7
+python -m app.cli author fixture-catalog
+python -m app.cli author critique ./run \
+  --style-profile ./run/style_profiles/rohirric_reference.json
+```
+
+Patch JSON can now use `draw_truss`, `draw_dormer`, `draw_arcade`,
+`draw_bellcast_eave`, `place_fixture`, `symmetry_edit`, `greeble_surface`, and
+`repeat_module`. Operations may include a named `anchor` and `anchorOffset`.
+See `MEDUSELD_IMPLEMENTATION_TRACEABILITY.md` for requirement-by-requirement
+coverage and the real-schematic acceptance summary.
 
 ## Production interior evidence
 
@@ -123,6 +214,11 @@ python -m app.cli interior packet ./run \
   --quality-profile presentation \
   --slice-fallback always \
   --out ./run/interior-packets/ROOM_ID
+
+python -m app.cli interior walkthrough ./run \
+  --room ROOM_ID --frames 8 --out ./run/walkthrough
+python -m app.cli interior sightline ./run \
+  --room ROOM_ID --out ./run/sightlines.json
 ```
 
 A packet contains grounded first-person and explicitly labeled third-person cutaway views, room-bounded plans/slices, candidate and rejection records, quality metrics, exact source hashes, and semantic maps. Cutaway masks are render-only and never change the canonical document. See `docs/architecture/interior-perspective.md`.
