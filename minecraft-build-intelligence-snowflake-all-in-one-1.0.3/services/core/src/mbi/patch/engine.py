@@ -28,6 +28,7 @@ from .geometry import (
     sphere,
 )
 from .model import BlockChange, BlockEntityChange, Patch, PatchStatus, RegionLock
+from .assemblies import ASSEMBLIES, assembly_changes
 
 _AIR_STATES = {"minecraft:air", "minecraft:cave_air", "minecraft:void_air"}
 
@@ -230,7 +231,9 @@ class PatchEngine:
         block_updates: dict[IntVector3, str | None] = {}
         entity_updates: dict[IntVector3, CanonicalBlockEntity | None] = {}
 
-        if op == "set_block":
+        if op in ASSEMBLIES:
+            block_updates.update(assembly_changes(operation))
+        elif op == "set_block":
             block_updates[_vec(operation.get("position"), "position")] = _canonical_state(operation.get("state"))
         elif op in {"set_blocks", "paste_template"}:
             raw_blocks = operation.get("blocks")
@@ -431,6 +434,161 @@ class PatchEngine:
             for point in box.iter_points():
                 index = min(len(gradient) - 1, round((getattr(point, axis) - minimum) / span * (len(gradient) - 1)))
                 block_updates[point] = gradient[index]
+        elif op == "greeble_surface":
+            box = _bounds(operation)
+            probability = float(operation.get("probability", 0.12))
+            detail_state = _canonical_state(operation.get("detailState", operation.get("state")))
+            mode = str(operation.get("mode", "mixed"))
+            if mode not in {"mixed", "protrude", "recess"}:
+                raise PatchError(
+                    "GREEBLE_MODE",
+                    "greeble_surface mode must be mixed, protrude, or recess.",
+                )
+            depth = max(1, min(4, int(operation.get("depth", 1))))
+            directions = (
+                IntVector3(1, 0, 0),
+                IntVector3(-1, 0, 0),
+                IntVector3(0, 1, 0),
+                IntVector3(0, -1, 0),
+                IntVector3(0, 0, 1),
+                IntVector3(0, 0, -1),
+            )
+            candidates: list[tuple[IntVector3, IntVector3]] = []
+            for point in box.iter_points():
+                if states.get(point, "minecraft:air") in _AIR_STATES:
+                    continue
+                outward = next(
+                    (
+                        offset
+                        for offset in directions
+                        if states.get(
+                            point + offset,
+                            "minecraft:air",
+                        )
+                        in _AIR_STATES
+                    ),
+                    None,
+                )
+                if outward is not None:
+                    candidates.append((point, outward))
+            selected = deterministic_mask(
+                (point for point, _ in candidates),
+                seed=int(operation.get("seed", 0)),
+                probability=probability,
+            )
+            outward_by_point = dict(candidates)
+            for point in sorted(selected):
+                outward = outward_by_point[point]
+                selected_mode = mode
+                if mode == "mixed":
+                    digest = hashlib.sha256(
+                        (
+                            f"{int(operation.get('seed', 0))}:"
+                            f"{point.x}:{point.y}:{point.z}:mode"
+                        ).encode()
+                    ).digest()
+                    selected_mode = (
+                        "protrude" if digest[0] % 2 == 0 else "recess"
+                    )
+                if selected_mode == "protrude":
+                    for distance in range(1, depth + 1):
+                        block_updates[
+                            IntVector3(
+                                point.x + outward.x * distance,
+                                point.y + outward.y * distance,
+                                point.z + outward.z * distance,
+                            )
+                        ] = detail_state
+                else:
+                    block_updates[point] = "minecraft:air"
+                    inward = IntVector3(
+                        point.x - outward.x,
+                        point.y - outward.y,
+                        point.z - outward.z,
+                    )
+                    if states.get(inward, "minecraft:air") not in _AIR_STATES:
+                        block_updates[inward] = detail_state
+        elif op == "symmetry_edit":
+            raw_operations = operation.get("operations")
+            if not isinstance(raw_operations, list):
+                raise PatchError(
+                    "SYMMETRY_OPERATIONS",
+                    "symmetry_edit requires an operations list.",
+                )
+            axis = str(operation.get("axis", "x"))
+            origin = _vec(operation.get("origin"), "origin")
+            for nested in raw_operations:
+                if not isinstance(nested, dict):
+                    raise PatchError(
+                        "SYMMETRY_OPERATION",
+                        "Nested symmetry operations must be objects.",
+                    )
+                nested_updates, nested_entities = self._operation_changes(
+                    dict(nested), states, entities
+                )
+                block_updates.update(nested_updates)
+                entity_updates.update(nested_entities)
+                for point, state in nested_updates.items():
+                    mirrored = mirror(point, origin, axis)
+                    block_updates[mirrored] = (
+                        _state_transform(state, mirror_axis=axis)
+                        if state is not None
+                        else None
+                    )
+        elif op == "repeat_module":
+            nested = operation.get("operation")
+            if not isinstance(nested, dict):
+                raise PatchError(
+                    "REPEAT_OPERATION",
+                    "repeat_module requires one nested operation.",
+                )
+            count = int(operation.get("count", 1))
+            if not 1 <= count <= 256:
+                raise PatchError(
+                    "REPEAT_COUNT",
+                    "repeat_module count must be between 1 and 256.",
+                )
+            spacing = _vec(operation.get("spacing", [1, 0, 0]), "spacing")
+            variation = max(0, int(operation.get("variation", 0)))
+            seed = int(operation.get("seed", 0))
+            coordinate_keys = {
+                "position",
+                "origin",
+                "start",
+                "end",
+                "center",
+                "min",
+                "max",
+                "sourceMin",
+                "sourceMax",
+            }
+            for index in range(count):
+                translated = copy.deepcopy(nested)
+                jitter = (
+                    ((seed * 1103515245 + index * 12345) >> 8)
+                    % (variation * 2 + 1)
+                    - variation
+                    if variation
+                    else 0
+                )
+                offset = IntVector3(
+                    spacing.x * index,
+                    spacing.y * index + jitter,
+                    spacing.z * index,
+                )
+                for key in coordinate_keys:
+                    value = translated.get(key)
+                    if (
+                        isinstance(value, list)
+                        and len(value) == 3
+                        and all(isinstance(item, int) for item in value)
+                    ):
+                        translated[key] = list((_vec(value, key) + offset).as_tuple())
+                nested_updates, nested_entities = self._operation_changes(
+                    translated, states, entities
+                )
+                block_updates.update(nested_updates)
+                entity_updates.update(nested_entities)
         elif op == "set_block_entity":
             position = _vec(operation.get("position"), "position")
             data = operation.get("data")

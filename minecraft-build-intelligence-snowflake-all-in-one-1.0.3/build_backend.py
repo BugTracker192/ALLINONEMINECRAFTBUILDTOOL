@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent
 VERSION = str(tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))["project"]["version"])
 DIST_INFO = f"{DIST}-{VERSION}.dist-info"
 WHEEL_NAME = f"{DIST}-{VERSION}-py3-none-any.whl"
+EDITABLE_WHEEL_NAME = f"{DIST}-{VERSION}-0.editable-py3-none-any.whl"
 
 
 def get_requires_for_build_wheel(config_settings=None) -> list[str]:
@@ -30,6 +31,10 @@ def get_requires_for_build_wheel(config_settings=None) -> list[str]:
 
 
 def get_requires_for_build_sdist(config_settings=None) -> list[str]:
+    return []
+
+
+def get_requires_for_build_editable(config_settings=None) -> list[str]:
     return []
 
 
@@ -50,6 +55,7 @@ Requires-Dist: cryptography<47,>=42; extra == 'security'
 Provides-Extra: test
 Requires-Dist: pytest<10,>=8; extra == 'test'
 Requires-Dist: hypothesis<7,>=6.100; extra == 'test'
+Requires-Dist: pytest-asyncio<2,>=1; extra == 'test'
 Description-Content-Type: text/markdown
 
 {readme}
@@ -104,6 +110,27 @@ def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None) -
     return DIST_INFO
 
 
+def prepare_metadata_for_build_editable(metadata_directory, config_settings=None) -> str:
+    return prepare_metadata_for_build_wheel(metadata_directory, config_settings)
+
+
+def _write_wheel_with_records(
+    output: Path,
+    files: Iterable[tuple[str, bytes]],
+) -> None:
+    records: list[tuple[str, str, str]] = []
+    with zipfile.ZipFile(output, "w") as archive:
+        for name, data in files:
+            _zip_write(archive, name, data)
+            records.append((name, _hash(data), str(len(data))))
+        record_name = f"{DIST_INFO}/RECORD"
+        buffer = io.StringIO(newline="")
+        writer = csv.writer(buffer, lineterminator="\n")
+        writer.writerows(records)
+        writer.writerow((record_name, "", ""))
+        _zip_write(archive, record_name, buffer.getvalue().encode("utf-8"))
+
+
 def build_wheel(wheel_directory, config_settings=None, metadata_directory=None) -> str:
     destination = Path(wheel_directory)
     destination.mkdir(parents=True, exist_ok=True)
@@ -132,6 +159,25 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None) 
         writer.writerows(records)
         writer.writerow((record_name, "", ""))
         _zip_write(archive, record_name, buffer.getvalue().encode("utf-8"))
+    return output.name
+
+
+def build_editable(wheel_directory, config_settings=None, metadata_directory=None) -> str:
+    """Build a PEP 660 wheel containing only paths and package metadata."""
+    destination = Path(wheel_directory)
+    destination.mkdir(parents=True, exist_ok=True)
+    output = destination / EDITABLE_WHEEL_NAME
+    source_paths = (ROOT.resolve(), (ROOT / "services" / "core" / "src").resolve())
+    pth = "".join(f"{path}\n" for path in source_paths).encode("utf-8")
+    fixed = (
+        (f"_{DIST}_editable.pth", pth),
+        (f"{DIST_INFO}/METADATA", _metadata()),
+        (f"{DIST_INFO}/WHEEL", _wheel()),
+        (f"{DIST_INFO}/entry_points.txt", _entry_points()),
+        (f"{DIST_INFO}/top_level.txt", b"app\nmbi\n"),
+        (f"{DIST_INFO}/licenses/LICENSE", (ROOT / "LICENSE").read_bytes()),
+    )
+    _write_wheel_with_records(output, fixed)
     return output.name
 
 

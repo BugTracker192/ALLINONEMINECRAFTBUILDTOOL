@@ -52,3 +52,25 @@ The exact user-supplied Minecraft asset archive is embedded inside the installab
 Revision `1.0.3-p2-production-interior-vision` adds scalable enclosed-space classification, exact room and boundary recovery, visibility-aware physical/elevated/orbit cameras, protected minimal cutaways, semantic quality retries, room-bounded slices, and composite evidence packets. Physical reachability and non-physical evidence are labeled separately. The full current suite passes 81/81 in the recorded environment; hosted Linux/Python 3.12 CI remains a separate required gate.
 
 The uninterrupted full verifier additionally passed flat/textured pipelines, provider protocol loops, AI construction from blank, CPU model coverage, 5,000 malformed-input mutations, byte determinism across 195 artifacts, isolated-wheel execution, and an 8,092-entry resource-pack audit with zero failures.
+
+## Meduseld quality and map-maker release (1.1.0)
+
+All actionable A/B/C/E/G/H/I/J items in the supplied Meduseld report are
+implemented and mapped in `MEDUSELD_IMPLEMENTATION_TRACEABILITY.md`. The
+release adds exact Litematic block-entity verification, complete texture
+coverage including entity-rendered blocks, scalable/resumable rendering,
+whole-volume comprehension, scoped interior analysis, map structure
+intelligence, reference-style authoring, and a composite quality feedback loop.
+
+Real-schematic acceptance used the report's 108,917-block, 1,495-block-entity
+fixture. Both structure export formats passed every exact mismatch class,
+texture coverage reached 100%, the main structure produced 44 room/navigation/
+lighting rows with 239 emitters and no skip, and the 12-tile exact render
+resumed without changing its PNG hash. The final automated test count and
+hosted CI state are recorded in the release manifests.
+
+The complete release verifier also passed the offline/import-closure and
+source-security audits, Snowflake end-to-end pipeline, multimodal provider
+loops, AI construction from blank, CPU model coverage, 5,000 malformed-input
+mutations, flat/textured benchmarks, 195-artifact byte determinism, isolated
+wheel pipeline, and the 8,092-file resource-pack audit.

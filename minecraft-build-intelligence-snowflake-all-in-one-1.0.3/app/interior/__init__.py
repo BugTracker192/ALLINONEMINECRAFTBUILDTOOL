@@ -16,6 +16,7 @@ from .model import (
     walkable_eye_positions,
 )
 from .quality import FrameQuality, evaluate_frame
+from .program import interior_walkthrough, room_sightlines
 from .rendering import (
     diagnose_room,
     inspect_room,
@@ -36,6 +37,8 @@ __all__ = [
     "cutaway_mask",
     "diagnose_room",
     "evaluate_frame",
+    "interior_walkthrough",
+    "room_sightlines",
     "feature_candidates",
     "get_room",
     "inspect_room",

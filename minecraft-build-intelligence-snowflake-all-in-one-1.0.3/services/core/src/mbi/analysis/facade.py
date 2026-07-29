@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from statistics import fmean, pstdev
 
 from ..canonical import BuildDocument, IntVector3
 from .block_profiles import block_profile
@@ -92,8 +93,61 @@ def facade_report(document: BuildDocument) -> dict[str, object]:
             "windowSpacing": spacing[:500],
             "largeFlatPatches": sorted(patches, key=lambda item: -int(item["area"]))[:100],
         }
+        surface_cells = len(exposed)
+        flat_area = sum(int(item["area"]) for item in patches)
+        flat_area_ratio = flat_area / max(1, surface_cells)
+        depth_values = [depth for depth, _ in exposed.values()]
+        depth_variance = pstdev(depth_values) if len(depth_values) >= 2 else 0.0
+        silhouette_tops: dict[int, int] = {}
+        for u, y in exposed:
+            silhouette_tops[u] = max(y, silhouette_tops.get(u, y))
+        ordered_tops = [silhouette_tops[u] for u in sorted(silhouette_tops)]
+        silhouette_step = (
+            fmean(abs(right - left) for left, right in zip(ordered_tops, ordered_tops[1:]))
+            if len(ordered_tops) >= 2
+            else 0.0
+        )
+        shallow_depth = 1.0 - min(1.0, depth_variance / 3.0)
+        uniform_silhouette = 1.0 - min(1.0, silhouette_step / 2.0)
+        monotony_score = min(
+            1.0,
+            0.55 * flat_area_ratio + 0.25 * shallow_depth + 0.20 * uniform_silhouette,
+        )
+        worst_regions = []
+        for patch in sorted(patches, key=lambda item: -int(item["area"]))[:25]:
+            if direction in {"north", "south"}:
+                minimum = [patch["uMin"], patch["yMin"], patch["depth"]]
+                maximum = [patch["uMax"], patch["yMax"], patch["depth"]]
+            else:
+                minimum = [patch["depth"], patch["yMin"], patch["uMin"]]
+                maximum = [patch["depth"], patch["yMax"], patch["uMax"]]
+            worst_regions.append(
+                {
+                    **patch,
+                    "bounds": {"min": minimum, "max": maximum},
+                    "monotonyContribution": round(
+                        int(patch["area"]) / max(1, surface_cells) * monotony_score,
+                        6,
+                    ),
+                }
+            )
+        per_face[direction]["monotony"] = {
+            "score": round(monotony_score, 6),
+            "interpretation": "higher-is-more-monotonous",
+            "flatPatchAreaRatio": round(flat_area_ratio, 6),
+            "depthStandardDeviation": round(depth_variance, 6),
+            "silhouetteMeanStep": round(silhouette_step, 6),
+            "worstRegions": worst_regions,
+            "thresholds": {
+                "review": 0.55,
+                "high": 0.72,
+            },
+        }
     return {
         "faces": per_face,
         "largestFlatPatches": sorted(all_flat_regions, key=lambda item: -int(item["area"]))[:100],
         "largeFlatPatchCount": len(all_flat_regions),
+        "elevationMonotony": {
+            direction: value["monotony"] for direction, value in per_face.items()
+        },
     }

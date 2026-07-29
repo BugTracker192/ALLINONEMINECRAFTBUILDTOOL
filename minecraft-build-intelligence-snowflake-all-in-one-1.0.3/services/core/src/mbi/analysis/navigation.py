@@ -44,6 +44,7 @@ def navigation_graph(
     *,
     max_nodes: int = 2_000_000,
     max_drop: int = 3,
+    room_volumes=(),
 ) -> dict[str, object]:
     nodes: set[IntVector3] = set()
     for y in range(document.bounds.min.y, document.bounds.max.y + 2):
@@ -112,6 +113,34 @@ def navigation_graph(
         components.append(NavigationComponent(component_id, len(points), bounds))
 
     components.sort(key=lambda item: -item.node_count)
+    exterior_component_ids = {
+        node_component[node]
+        for node in nodes
+        if (
+            node.x in {document.bounds.min.x, document.bounds.max.x}
+            or node.z in {document.bounds.min.z, document.bounds.max.z}
+        )
+    }
+    room_reachability = []
+    for volume in room_volumes:
+        component_counts: dict[int, int] = {}
+        for node, component_id in node_component.items():
+            if volume.bounds.contains(node):
+                component_counts[component_id] = (
+                    component_counts.get(component_id, 0) + 1
+                )
+        component_ids = sorted(component_counts)
+        reachable = bool(set(component_ids) & exterior_component_ids)
+        room_reachability.append(
+            {
+                "roomId": volume.volume_id,
+                "standableNodeCount": sum(component_counts.values()),
+                "navigationComponentIds": component_ids,
+                "exteriorConnected": reachable,
+                "sealedFromExterior": not reachable,
+                "method": "room-bounds-to-exterior-navigation-component-v1",
+            }
+        )
     dead_ends = [node for node, outgoing in edges.items() if len(set(outgoing)) <= 1]
     return {
         "analysisSkipped": False,
@@ -119,6 +148,8 @@ def navigation_graph(
         "directedEdgeCount": sum(len(values) for values in edges.values()),
         "componentCount": len(components),
         "components": [asdict(item) for item in components],
+        "exteriorComponentIds": sorted(exterior_component_ids),
+        "roomReachability": room_reachability,
         "deadEndCount": len(dead_ends),
         "deadEndSample": [point.as_tuple() for point in dead_ends[:500]],
         "blockedDoorApproachCount": blocked_doors,

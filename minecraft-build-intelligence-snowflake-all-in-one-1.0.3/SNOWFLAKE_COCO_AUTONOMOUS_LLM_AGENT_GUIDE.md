@@ -62,7 +62,7 @@ Mandatory runtime dependencies are only:
 
 ```text
 numpy >=2.0,<3
-Pillow >=11,<13
+Pillow >=12.3,<13
 ```
 
 Optional live-provider dependency:
@@ -76,6 +76,7 @@ Optional test dependencies:
 ```text
 pytest >=8,<10
 hypothesis >=6.100,<7
+pytest-asyncio >=1,<2
 ```
 
 The repository uses a self-contained standard-library PEP 517 wheel backend. Building this project does not require downloading setuptools, wheel, hatchling, or another build backend.
@@ -127,7 +128,24 @@ Reject versions below 3.12.
 
 ### 2.3 Create the environment
 
-Use a repository-local environment unless one is already active and valid:
+Use a repository-local environment only on a normal writable filesystem. On a
+Snowflake/CoCo stage, first mirror the source to local scratch because stage
+filesystems may reject virtual-environment symlinks and wheel finalization:
+
+```bash
+$PYTHON BOOTSTRAP_SNOWFLAKE.py \
+  --scratch-root /tmp/mbi-scratch \
+  --cache-dir /persistent/mbi-cache \
+  --warm-cache
+```
+
+The warm cache contains the verified reconstructed asset and a source tarball;
+pass `--cache-venv /path/to/environment` to include an environment tarball.
+Never describe an empty `vendor/wheelhouse/` as offline dependency coverage.
+Use an authenticated configured index, `--index-url`, or public PyPI only where
+policy and connectivity permit it.
+
+On an ordinary local filesystem:
 
 ```bash
 $PYTHON -m venv .venv
@@ -5533,7 +5551,7 @@ The following schemas are generated from the installed implementation. Treat the
 ```text
 usage: python -m app.cli [-h] [--json-errors] [--quiet] [--verbose]
                          [--log-json]
-                         {import,analyze,snapshot,export,pipeline,render,query,patch,version,build-plan,apply-plan,pixel-to-block,block-to-pixel,tool,agent} ...
+                         {import,analyze,snapshot,export,pipeline,render,query,patch,version,build-plan,apply-plan,pixel-to-block,block-to-pixel,tool,agent,quality-report,export-map,texture-audit,palette-atlas,contact-sheet,slice-sweep,annotated-render,structure,author,interior} ...
 python -m app.cli: error: the following arguments are required: command
 ```
 
@@ -5823,6 +5841,64 @@ options:
 ```
 
 ---
+
+## Appendix B runtime additions (1.1.0 Meduseld quality/map-maker revision)
+
+Appendix B is a checked-in snapshot. The runtime `--help` output is
+authoritative. This revision additionally exposes:
+
+```text
+render:
+  --projection {auto,orthographic,perspective}
+  --camera-position X,Y,Z
+  --camera-target X,Y,Z
+  --camera-yaw DEGREES
+  --camera-pitch DEGREES
+  --fov DEGREES
+  --near DISTANCE
+  --far DISTANCE
+  --hide-coordinate X,Y,Z
+  --fit / --no-fit
+  --zoom SCALE
+  --margin BLOCKS
+  --accuracy {exact,fast}
+  --tile-size PIXELS
+  --resume
+
+analyze:
+  --bounds X1,Y1,Z1,X2,Y2,Z2
+  --structure ID_OR_NAME
+  --seal-structure-envelope
+  --room-bounds X1,Y1,Z1,X2,Y2,Z2
+  --room-seed X,Y,Z
+  --lighting-max-cells N       0 removes the cap
+  --room-max-cells N
+
+interior:
+  render, gallery, inspect, diagnose, packet, walkthrough, sightline
+  render defaults to --fail-on-reject and accepts --no-fail-on-reject
+  packet accepts --min-cumulative-coverage FRACTION
+
+comprehension:
+  export-map, texture-audit, palette-atlas, contact-sheet, slice-sweep,
+  annotated-render
+
+quality-report:
+  --bounds, --structure, --seal-structure-envelope, --fail-under,
+  --from, --to
+
+structure:
+  inventory, name, extract, analyze-all, compare, site-plan, map-report,
+  render-all, interiors
+
+author:
+  anchor-set, anchor-room, anchor-bay, anchors, style-extract, critique,
+  fixture-catalog
+```
+
+Run `python -m app.cli COMMAND --help` for the complete current option set.
+See `MEDUSELD_IMPLEMENTATION_TRACEABILITY.md` for the exhaustive report map and
+real-schematic acceptance evidence.
 
 # APPENDIX C — AUTHORITATIVE INTERNAL REFERENCES
 

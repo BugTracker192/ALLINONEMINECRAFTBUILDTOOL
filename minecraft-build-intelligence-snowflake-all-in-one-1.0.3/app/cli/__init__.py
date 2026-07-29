@@ -56,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = LEGACY.build_parser()
     sub = _subparsers(parser)
     render = sub.choices["render"]
+    analyze = sub.choices["analyze"]
+    analyze.add_argument(
+        "--structure",
+        help="Analyze one detected structure by durable id or registered name.",
+    )
     render.add_argument("--projection", choices=("auto", "orthographic", "perspective"), default="auto")
     render.add_argument("--camera-position", type=_vec3)
     render.add_argument("--camera-target", type=_vec3)
@@ -65,6 +70,164 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--near", type=float, default=0.05)
     render.add_argument("--far", type=float, default=4096.0)
     render.add_argument("--hide-coordinate", type=_vec3, action="append")
+
+    quality = sub.add_parser(
+        "quality-report",
+        help="Emit a normalized quality scorecard and optional CI threshold gate.",
+    )
+    quality.add_argument("run")
+    quality.add_argument("--bounds", type=LEGACY._inclusive_bounds)
+    quality.add_argument("--structure")
+    quality.add_argument(
+        "--seal-structure-envelope",
+        action="store_true",
+        help="Apply automatic exterior-opening sealing to the selected bounds.",
+    )
+    quality.add_argument("--fail-under", type=float)
+    quality.add_argument("--from", dest="from_version")
+    quality.add_argument("--to", dest="to_version")
+
+    command = sub.add_parser("export-map")
+    command.add_argument("run")
+    command.add_argument("--out", required=True)
+    command.add_argument("--format", choices=("csv", "jsonl", "parquet"), default="csv")
+    command.add_argument("--resource-pack")
+
+    command = sub.add_parser("texture-audit")
+    command.add_argument("run")
+    command.add_argument("--resource-pack")
+    command.add_argument("--fail-under", type=float)
+
+    command = sub.add_parser("palette-atlas")
+    command.add_argument("run")
+    command.add_argument("--out", required=True)
+    command.add_argument("--resource-pack")
+    command.add_argument("--columns", type=int, default=5)
+    command.add_argument("--swatch-size", type=int, default=48)
+
+    command = sub.add_parser("contact-sheet")
+    command.add_argument("run")
+    command.add_argument(
+        "--views",
+        default="isometric_ne,isometric_sw,south,top",
+    )
+    command.add_argument("--slices", default="")
+    command.add_argument("--out", required=True)
+    command.add_argument("--resource-pack")
+    command.add_argument("--size", type=LEGACY._size, default=(480, 320))
+    command.add_argument("--accuracy", choices=("fast", "exact"), default="exact")
+    command.add_argument("--resume", action="store_true")
+    command.add_argument("--columns", type=int, default=3)
+
+    command = sub.add_parser("slice-sweep")
+    command.add_argument("run")
+    command.add_argument("--slice", required=True, help="AXIS:MIN..MAX")
+    command.add_argument("--step", type=int, default=1)
+    command.add_argument("--out", required=True)
+    command.add_argument("--resource-pack")
+    command.add_argument("--resume", action="store_true")
+    command.add_argument(
+        "--montage",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+
+    command = sub.add_parser("annotated-render")
+    command.add_argument("run")
+    command.add_argument("--out", required=True)
+    command.add_argument("--view", default="isometric_ne")
+    command.add_argument("--resource-pack")
+    command.add_argument("--size", type=LEGACY._size, default=(1280, 800))
+    command.add_argument("--annotate-materials", type=int, default=8)
+
+    author = sub.add_parser(
+        "author",
+        help="Reference-style extraction, anchors, fixtures, and critique tooling.",
+    )
+    author_sub = author.add_subparsers(dest="author_command", required=True)
+    command = author_sub.add_parser("anchor-set")
+    command.add_argument("run")
+    command.add_argument("name")
+    command.add_argument("--position", type=LEGACY._int_vector, required=True)
+    command = author_sub.add_parser("anchor-room")
+    command.add_argument("run")
+    command.add_argument("name")
+    command.add_argument("--room", required=True)
+    command.add_argument(
+        "--face",
+        choices=("north", "south", "east", "west", "floor", "ceiling"),
+        required=True,
+    )
+    command = author_sub.add_parser("anchor-bay")
+    command.add_argument("run")
+    command.add_argument("name")
+    command.add_argument("--structure", required=True)
+    command.add_argument("--face", choices=("north", "south", "east", "west"), required=True)
+    command.add_argument("--bay-index", type=int, required=True)
+    command.add_argument("--bay-count", type=int, required=True)
+    command = author_sub.add_parser("anchors")
+    command.add_argument("run")
+    command = author_sub.add_parser("style-extract")
+    command.add_argument("run")
+    command.add_argument("--name", default="reference")
+    command = author_sub.add_parser("critique")
+    command.add_argument("run")
+    command.add_argument("--style-profile")
+    command = author_sub.add_parser("fixture-catalog")
+
+    structure = sub.add_parser(
+        "structure",
+        help="Detect, name, analyze, extract, render, and compare map structures.",
+    )
+    structure_sub = structure.add_subparsers(dest="structure_command", required=True)
+    command = structure_sub.add_parser("inventory")
+    command.add_argument("run")
+    command.add_argument("--separation", type=int, default=2)
+    command.add_argument("--minimum-blocks", type=int, default=24)
+    command.add_argument(
+        "--window-edge",
+        type=int,
+        default=64,
+        help="Spatial aggregation window edge in blocks (default: 64).",
+    )
+    command = structure_sub.add_parser("name")
+    command.add_argument("run")
+    command.add_argument("identifier")
+    command.add_argument("name")
+    command = structure_sub.add_parser("extract")
+    command.add_argument("run")
+    command.add_argument("identifier")
+    command.add_argument("--out", required=True)
+    command.add_argument("--format", choices=("schem", "litematic"), default="schem")
+    command = structure_sub.add_parser("analyze-all")
+    command.add_argument("run")
+    command.add_argument("--resume", action="store_true")
+    command.add_argument("--lighting-max-cells", type=int, default=10_000_000)
+    command = structure_sub.add_parser("compare")
+    command.add_argument("run")
+    command.add_argument("first")
+    command.add_argument("second")
+    command = structure_sub.add_parser("site-plan")
+    command.add_argument("run")
+    command.add_argument("--out")
+    command.add_argument("--pixels-per-block", type=int, default=3)
+    command = structure_sub.add_parser("map-report")
+    command.add_argument("run")
+    command = structure_sub.add_parser("render-all")
+    command.add_argument("run")
+    command.add_argument("--out")
+    command.add_argument("--resource-pack")
+    command.add_argument("--accuracy", choices=("fast", "exact"), default="fast")
+    command.add_argument("--resume", action="store_true")
+    command.add_argument("--size", type=LEGACY._size, default=(640, 480))
+    command = structure_sub.add_parser("interiors")
+    command.add_argument("run")
+    command.add_argument("--out")
+    command.add_argument("--resource-pack")
+    command.add_argument("--resume", action="store_true")
+    command.add_argument("--max-rooms-per-structure", type=int, default=8)
+    command.add_argument("--min-cumulative-coverage", type=float, default=0.0)
+    command.add_argument("--size", type=LEGACY._size, default=(640, 400))
 
     interior = sub.add_parser("interior")
     interior_sub = interior.add_subparsers(dest="interior_command", required=True)
@@ -111,6 +274,12 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--min-room-coverage", type=float)
     command.add_argument("--max-obstruction", type=float)
     command.add_argument("--max-attempts", type=int, default=8)
+    command.add_argument(
+        "--fail-on-reject",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Return a non-zero exit code when the selected frame fails the quality gate (default: on).",
+    )
     command.add_argument("--name")
     command.add_argument("--out")
 
@@ -137,6 +306,21 @@ def build_parser() -> argparse.ArgumentParser:
         command = interior_sub.add_parser(command_name)
         command.add_argument("run")
         command.add_argument("--room", required=True)
+
+    command = interior_sub.add_parser("walkthrough")
+    command.add_argument("run")
+    command.add_argument("--room", required=True)
+    command.add_argument("--spacing", type=int, default=6)
+    command.add_argument("--render", action="store_true")
+    command.add_argument("--resource-pack")
+    command.add_argument("--size", type=LEGACY._size, default=(640, 400))
+    command.add_argument("--resume", action="store_true")
+    command.add_argument("--out")
+
+    command = interior_sub.add_parser("sightline")
+    command.add_argument("run")
+    command.add_argument("--room", required=True)
+    command.add_argument("--out")
 
     command = interior_sub.add_parser("packet")
     command.add_argument("run")
@@ -179,6 +363,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     command.add_argument("--min-room-coverage", type=float)
     command.add_argument("--max-obstruction", type=float)
+    command.add_argument(
+        "--min-cumulative-coverage",
+        type=float,
+        default=0.0,
+        help="Require the accepted shot-set union to cover this fraction of room boundary coordinates.",
+    )
     command.add_argument("--max-attempts", type=int, default=8)
     command.add_argument("--out")
     return parser
@@ -222,13 +412,34 @@ def _perspective_render(args: argparse.Namespace) -> Any:
 
 
 def _interior(args: argparse.Namespace) -> Any:
-    from app.interior import diagnose_room, inspect_room, render_gallery, render_room, render_room_packet
+    from app.interior import (
+        diagnose_room,
+        inspect_room,
+        interior_walkthrough,
+        render_gallery,
+        render_room,
+        render_room_packet,
+        room_sightlines,
+    )
     if args.interior_command == "inspect":
         return inspect_room(args.run, args.room)
     if args.interior_command == "diagnose":
         return diagnose_room(args.run, args.room)
+    if args.interior_command == "walkthrough":
+        return interior_walkthrough(
+            args.run,
+            args.room,
+            spacing=args.spacing,
+            output=args.out,
+            render_frames=args.render,
+            resource_pack=args.resource_pack,
+            size=args.size,
+            resume=args.resume,
+        )
+    if args.interior_command == "sightline":
+        return room_sightlines(args.run, args.room, output=args.out)
     if args.interior_command == "render":
-        return render_room(
+        report = render_room(
             args.run, args.room, shot=args.shot, resource_pack=args.resource_pack,
             size=args.size, fov=args.fov, near=args.near, far=args.far,
             eye_height=args.eye_height, lighting=args.lighting,
@@ -239,8 +450,26 @@ def _interior(args: argparse.Namespace) -> Any:
             min_room_coverage=args.min_room_coverage,
             max_obstruction=args.max_obstruction,
         )
+        if args.fail_on_reject and report["quality_status"] != "accepted":
+            reasons = report["quality"].get("rejection_reasons", [])
+            raise AppError(
+                "INTERIOR_RENDER_REJECTED",
+                "Interior render failed its quality gate: " + ", ".join(reasons or ["unknown reason"]),
+                {
+                    "room_id": report["room_id"],
+                    "rejection_reasons": reasons,
+                    "quality": report["quality"],
+                    "png": report["png"],
+                    "report": str(
+                        Path(args.out or args.run)
+                        / f"room_{report['room_id']}_{report['shot']}_interior-report.json"
+                    ),
+                },
+                30,
+            )
+        return report
     if args.interior_command == "packet":
-        return render_room_packet(
+        packet = render_room_packet(
             args.run, args.room,
             shots=tuple(item for item in args.shots.split(",") if item),
             resource_pack=args.resource_pack, size=args.size, fov=args.fov,
@@ -254,7 +483,26 @@ def _interior(args: argparse.Namespace) -> Any:
             quality_profile=args.quality_profile,
             min_room_coverage=args.min_room_coverage,
             max_obstruction=args.max_obstruction,
+            min_cumulative_coverage=args.min_cumulative_coverage,
         )
+        if not packet["coverage"]["passed"]:
+            coverage = packet["coverage"]
+            raise AppError(
+                "INTERIOR_COVERAGE_UNMET",
+                "Interior packet did not meet cumulative coverage: "
+                f"achieved {coverage['achieved']:.3f}, "
+                f"required {coverage['minimum']:.3f}.",
+                {
+                    "room_id": packet["room_id"],
+                    "coverage": coverage,
+                    "packet": str(
+                        Path(args.out or Path(args.run) / f"room-{args.room}-packet")
+                        / "interior_packet.json"
+                    ),
+                },
+                30,
+            )
+        return packet
     room_ids = None if args.rooms == "all" else tuple(item for item in args.rooms.split(",") if item)
     return render_gallery(
         args.run, room_ids=room_ids, shots=tuple(item for item in args.shots.split(",") if item),
@@ -265,6 +513,231 @@ def _interior(args: argparse.Namespace) -> Any:
 
 
 def dispatch(args: argparse.Namespace) -> Any:
+    if args.command == "author":
+        from app.authoring import (
+            critique_build,
+            extract_style_profile,
+            load_anchors,
+            set_anchor,
+            set_room_face_anchor,
+            set_structure_bay_anchor,
+        )
+
+        if args.author_command == "anchor-set":
+            return set_anchor(args.run, args.name, args.position)
+        if args.author_command == "anchor-room":
+            return set_room_face_anchor(args.run, args.name, args.room, args.face)
+        if args.author_command == "anchor-bay":
+            return set_structure_bay_anchor(
+                args.run,
+                args.name,
+                args.structure,
+                args.face,
+                args.bay_index,
+                args.bay_count,
+            )
+        if args.author_command == "anchors":
+            return load_anchors(args.run)
+        if args.author_command == "style-extract":
+            return extract_style_profile(args.run, name=args.name)
+        if args.author_command == "critique":
+            return critique_build(args.run, style_profile=args.style_profile)
+        from mbi.patch.assemblies import fixture_catalog
+
+        return fixture_catalog()
+    if args.command in {
+        "export-map",
+        "texture-audit",
+        "palette-atlas",
+        "contact-sheet",
+        "slice-sweep",
+        "annotated-render",
+    }:
+        from app.comprehension import (
+            annotated_render,
+            contact_sheet,
+            export_block_map,
+            palette_atlas,
+            slice_sweep,
+            texture_audit,
+        )
+
+        if args.command == "export-map":
+            return export_block_map(
+                args.run,
+                args.out,
+                format_name=args.format,
+                resource_pack=args.resource_pack,
+            )
+        if args.command == "texture-audit":
+            report = texture_audit(args.run, resource_pack=args.resource_pack)
+            coverage = report["texture_coverage_percent"]
+            if args.fail_under is not None and coverage < args.fail_under:
+                raise AppError(
+                    "TEXTURE_COVERAGE_BELOW_THRESHOLD",
+                    f"Static texture coverage {coverage:.6f}% is below required {args.fail_under:.6f}%.",
+                    {
+                        "coverage": coverage,
+                        "fail_under": args.fail_under,
+                        "report": str(Path(args.run) / "texture_audit.json"),
+                    },
+                    31,
+                )
+            return report
+        if args.command == "palette-atlas":
+            return palette_atlas(
+                args.run,
+                args.out,
+                resource_pack=args.resource_pack,
+                columns=args.columns,
+                swatch_size=args.swatch_size,
+            )
+        if args.command == "contact-sheet":
+            return contact_sheet(
+                args.run,
+                views=tuple(item for item in args.views.split(",") if item),
+                slices=tuple(item for item in args.slices.split(",") if item),
+                output=args.out,
+                resource_pack=args.resource_pack,
+                size=args.size,
+                accuracy=args.accuracy,
+                resume=args.resume,
+                columns=args.columns,
+            )
+        if args.command == "slice-sweep":
+            axis, raw_range = args.slice.split(":", 1)
+            if ".." not in raw_range:
+                raise AppError(
+                    "SLICE_SWEEP_RANGE",
+                    "Slice sweep requires AXIS:MIN..MAX.",
+                    exit_code=2,
+                )
+            minimum, maximum = (
+                int(value) for value in raw_range.split("..", 1)
+            )
+            return slice_sweep(
+                args.run,
+                axis=axis,
+                minimum=minimum,
+                maximum=maximum,
+                step=args.step,
+                output=args.out,
+                resource_pack=args.resource_pack,
+                resume=args.resume,
+                montage=args.montage,
+            )
+        return annotated_render(
+            args.run,
+            output=args.out,
+            view=args.view,
+            resource_pack=args.resource_pack,
+            size=args.size,
+            annotate_materials=args.annotate_materials,
+        )
+    if args.command == "structure":
+        from app.structures import (
+            analyze_all_structures,
+            batch_structure_interiors,
+            compare_structures,
+            extract_structure,
+            inventory_structures,
+            map_composition_report,
+            name_structure,
+            render_site_plan,
+            render_structure_lod,
+        )
+
+        if args.structure_command == "inventory":
+            return inventory_structures(
+                args.run,
+                separation=args.separation,
+                minimum_blocks=args.minimum_blocks,
+                window_edge=args.window_edge,
+            )
+        if args.structure_command == "name":
+            return name_structure(args.run, args.identifier, args.name)
+        if args.structure_command == "extract":
+            return extract_structure(
+                args.run,
+                args.identifier,
+                args.out,
+                format_name=args.format,
+            )
+        if args.structure_command == "analyze-all":
+            return analyze_all_structures(
+                args.run,
+                resume=args.resume,
+                lighting_max_cells=(
+                    None
+                    if args.lighting_max_cells == 0
+                    else args.lighting_max_cells
+                ),
+            )
+        if args.structure_command == "compare":
+            return compare_structures(args.run, args.first, args.second)
+        if args.structure_command == "site-plan":
+            return render_site_plan(
+                args.run,
+                output=args.out,
+                pixels_per_block=args.pixels_per_block,
+            )
+        if args.structure_command == "map-report":
+            return map_composition_report(args.run)
+        if args.structure_command == "render-all":
+            return render_structure_lod(
+                args.run,
+                output=args.out,
+                resource_pack=args.resource_pack,
+                accuracy=args.accuracy,
+                resume=args.resume,
+                size=args.size,
+            )
+        if args.structure_command == "interiors":
+            return batch_structure_interiors(
+                args.run,
+                output=args.out,
+                resource_pack=args.resource_pack,
+                resume=args.resume,
+                max_rooms_per_structure=args.max_rooms_per_structure,
+                min_cumulative_coverage=args.min_cumulative_coverage,
+                size=args.size,
+            )
+    if args.command == "quality-report":
+        from app.quality_report import quality_report
+
+        if args.structure:
+            from app.structures import resolve_structure_bounds
+
+            bounds = resolve_structure_bounds(args.run, args.structure)
+        else:
+            bounds = args.bounds
+        report = quality_report(
+            args.run,
+            bounds=bounds,
+            from_version=args.from_version,
+            to_version=args.to_version,
+            seal_structure_envelope=(
+                bool(args.structure)
+                or args.seal_structure_envelope
+            ),
+        )
+        score = (
+            report["after"]["overall_score"]
+            if report.get("schema") == "mbi.quality-diff.v1"
+            else report["overall_score"]
+        )
+        if args.fail_under is not None and score < args.fail_under:
+            raise AppError(
+                "QUALITY_THRESHOLD_FAILED",
+                f"Quality score {score:.3f} is below required {args.fail_under:.3f}.",
+                {
+                    "score": score,
+                    "fail_under": args.fail_under,
+                    "report": str(Path(args.run) / "quality_report.json"),
+                },
+                40,
+            )
+        return report
     if args.command == "interior":
         return _interior(args)
     if args.command == "render":

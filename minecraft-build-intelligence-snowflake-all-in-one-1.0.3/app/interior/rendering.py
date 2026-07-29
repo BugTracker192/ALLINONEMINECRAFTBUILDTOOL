@@ -12,6 +12,7 @@ from mbi.canonical import IntBoundingBox, IntVector3
 from app.assets import open_resource_pack
 from app.project import load_document
 from app.render.perspective import PerspectiveCameraSpec, PerspectiveRenderer
+from app.render.semantic import load_map
 from app.render.software import SoftwareRenderer
 from app.storage import atomic_write_json
 
@@ -23,6 +24,7 @@ from .model import (
     get_room,
     load_rooms,
     room_bounds,
+    room_geometry,
     voxel_ray,
 )
 from .quality import evaluate_frame
@@ -487,6 +489,7 @@ def render_room_packet(
     document = load_document(root)
     room = get_room(root, room_id)
     bounds = room_bounds(room)
+    geometry = room_geometry(document, room)
     common_options = dict(render_options)
     requested_camera_mode = common_options.pop("camera_mode", "auto")
     common_options.pop("occlusion", None)
@@ -496,6 +499,9 @@ def render_room_packet(
         common_options.pop("fallback", ("physical", "third-person", "cutaway", "slices"))
     )
     slice_fallback = common_options.pop("slice_fallback", "auto")
+    min_cumulative_coverage = float(
+        common_options.pop("min_cumulative_coverage", 0.0)
+    )
 
     physical = render_room(
         root,
@@ -650,6 +656,55 @@ def render_room_packet(
             [] if accepted_views else ["No perspective view passed the selected exact quality thresholds."]
         ),
     }
+    room_boundary = set(geometry.boundary)
+    visible_by_render: list[tuple[int, set[IntVector3]]] = []
+    for index, rendered in enumerate(renders):
+        if rendered["quality_status"] != "accepted":
+            continue
+        manifest_path = Path(rendered["manifest"])
+        manifest = json.loads(manifest_path.read_text("utf-8"))
+        metadata_path = (
+            manifest_path.parent / manifest["semantic_maps"]["metadata"]
+        ).resolve()
+        coordinates = load_map(metadata_path, "coordinate").reshape(-1, 3)
+        visible = {
+            IntVector3(int(row[0]), int(row[1]), int(row[2]))
+            for row in coordinates
+            if int(row[0]) != -(1 << 31)
+        }
+        visible_by_render.append((index, visible & room_boundary))
+    selected_indices: list[int] = []
+    cumulative_visible: set[IntVector3] = set()
+    remaining = list(visible_by_render)
+    while remaining:
+        best_index, best_visible = max(
+            remaining,
+            key=lambda item: (len(item[1] - cumulative_visible), -item[0]),
+        )
+        gain = best_visible - cumulative_visible
+        if not gain:
+            break
+        selected_indices.append(best_index)
+        cumulative_visible.update(best_visible)
+        remaining = [item for item in remaining if item[0] != best_index]
+    cumulative_coverage = len(cumulative_visible) / max(1, len(room_boundary))
+    coverage_gate = {
+        "metric": "visible-room-boundary-coordinate-union",
+        "minimum": round(min_cumulative_coverage, 6),
+        "achieved": round(cumulative_coverage, 6),
+        "passed": cumulative_coverage >= min_cumulative_coverage,
+        "visible_coordinate_count": len(cumulative_visible),
+        "room_boundary_coordinate_count": len(room_boundary),
+        "selected_render_indices": selected_indices,
+        "selected_shots": [renders[index]["shot"] for index in selected_indices],
+        "solver": "greedy-maximum-marginal-union-v1",
+    }
+    if not coverage_gate["passed"]:
+        diagnostics["unresolved_limitations"].append(
+            "Cumulative room coverage "
+            f"{cumulative_coverage:.3f} is below the required "
+            f"{min_cumulative_coverage:.3f}."
+        )
     atomic_write_json(destination / "room_summary.json", inspection)
     atomic_write_json(destination / "camera_candidates.json", accepted_candidates)
     atomic_write_json(destination / "camera_rejections.json", rejected_candidates)
@@ -676,6 +731,7 @@ def render_room_packet(
         "failed_evidence": failed_views,
         "fallback_path": diagnostics["fallback_path"],
         "unresolved_limitations": diagnostics["unresolved_limitations"],
+        "coverage": coverage_gate,
         "slice_count": len(slice_outputs),
         "slices": slice_outputs,
         "artifacts": {

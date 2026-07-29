@@ -1,6 +1,11 @@
 # Optional offline wheelhouse
 
-The mandatory Snowflake/CoCo contract provides `pip` access, so this directory may be empty.
-`BOOTSTRAP_SNOWFLAKE.py` uses compatible local wheels here first and falls back to PyPI only
-when NumPy or Pillow is absent. The private Minecraft asset bundle is already embedded in
-`app/bundled_assets/minecraft.zip` and requires no download.
+This directory is intentionally optional and may be empty. It is an offline
+dependency source only when compatible NumPy and Pillow wheels are actually
+present.
+
+`BOOTSTRAP_SNOWFLAKE.py` uses compatible local wheels first. Otherwise configure
+pip credentials or pass an explicit `--index-url`; some Snowflake artifact
+repository URLs return 401 without session credentials. Public PyPI is not
+assumed to be reachable. The private Minecraft asset is delivered separately
+through hash-locked ordinary-Git parts and needs no package-index download.
