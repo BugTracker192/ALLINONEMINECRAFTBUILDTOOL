@@ -427,7 +427,7 @@
     "composite_packet_contract": "passed",
     "entity_texture_proxy_rendering": "passed",
     "exact_tiled_render_resume": "passed",
-    "hosted_ci": "pending",
+    "hosted_ci": "passed",
     "independent_mismatch_classes": "passed",
     "interior_classification": "passed",
     "japan_benchmark": "download-blocked-not-executed",
