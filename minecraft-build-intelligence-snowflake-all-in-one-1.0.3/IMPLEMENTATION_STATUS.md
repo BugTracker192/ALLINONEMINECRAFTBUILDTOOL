@@ -74,3 +74,39 @@ source-security audits, Snowflake end-to-end pipeline, multimodal provider
 loops, AI construction from blank, CPU model coverage, 5,000 malformed-input
 mutations, flat/textured benchmarks, 195-artifact byte determinism, isolated
 wheel pipeline, and the 8,092-file resource-pack audit.
+
+The Meduseld capacity evidence above is deliberately scoped to its
+108,917-placed-block, 1,495-block-entity fixture. It is not a universal
+large-map claim.
+
+## Large-schematic release (1.2.0)
+
+Version 1.2.0 implements the complete Tree of Dreams fix plan at the code,
+generated-fixture and documentation layers:
+
+- streamed Sponge varints, Litematic bits, canonical hashing/JSON and map
+  export;
+- sparse dense-`uint32` chunk voxels and lazy multi-region overlays;
+- bounded/scoped load, analysis and structure extraction;
+- exact tile-local geometry with disk-backed semantic maps, durable resume and
+  an honest nearest-depth LOD overview;
+- terrain-relative geometric structure classification with material-independent
+  castle, bridge and dungeon guards;
+- renderer-backed fluid/entity texture coverage, verification-on export and
+  unknown-not-zero lighting;
+- complete command/patch schemas and warm-cache asset-part validation.
+
+Generated gates cover 16,777,216 placed voxels, 4,194,304 streamed Litematic
+states, 2,097,152-block exact tiled resume determinism, 50,000 rich block
+entities, all five entity-rendered families, general fluids/waterlogging,
+modern height -64 through 320 and 2,000 palette states. Anvil world saves are
+explicitly out of scope and fail with `ANVIL_WORLD_UNSUPPORTED`.
+
+The exact unmodified `Tree_of_dreams.schem` was not present in this checkout.
+Its named end-to-end gate therefore remains pending rather than being reported
+as passed. See `TREE_OF_DREAMS_IMPLEMENTATION_TRACEABILITY.md`.
+
+Final local evidence: 129 tests passed with zero failures/skips. The complete
+release verifier also passed the offline/security, Snowflake, multimodal,
+autonomous construction, CPU model, 5,000-mutation, benchmark,
+195-artifact-determinism, isolated 1.2.0 wheel and 8,092-asset audit gates.

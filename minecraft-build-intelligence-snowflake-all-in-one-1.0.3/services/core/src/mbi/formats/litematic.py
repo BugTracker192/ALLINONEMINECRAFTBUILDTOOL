@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from ..canonical import (
@@ -16,6 +17,7 @@ from ..canonical import (
 from ..compression import Compression
 from ..errors import FormatError
 from ..limits import NBTLimits, checked_volume
+from ..voxel import ChunkedVoxelMap, RegionOverlayVoxelMap
 from .common import (
     build_id_from_hash,
     ensure_air_palette,
@@ -42,7 +44,13 @@ def bits_per_entry(palette_size: int) -> int:
     return max(2, math.ceil(math.log2(max(1, palette_size))))
 
 
-def unpack_block_states(words: list[int], volume: int, bits: int, *, allow_trailing_words: bool = True) -> list[int]:
+def iter_block_states(
+    words: list[int],
+    volume: int,
+    bits: int,
+    *,
+    allow_trailing_words: bool = True,
+) -> Iterator[int]:
     if bits < 1 or bits > 32:
         raise FormatError("LITEMATIC_BITS_INVALID", "Litematic bits per entry is outside the supported range.", {"bits": bits})
     expected_words = math.ceil(volume * bits / 64)
@@ -58,40 +66,73 @@ def unpack_block_states(words: list[int], volume: int, bits: int, *, allow_trail
             "Litematic region contains trailing packed words.",
             {"expectedWords": expected_words, "actualWords": len(words)},
         )
-    unsigned = [word & 0xFFFFFFFFFFFFFFFF for word in words]
     mask = (1 << bits) - 1
-    values: list[int] = []
     for index in range(volume):
         start_bit = index * bits
         start_word = start_bit // 64
         end_word = ((index + 1) * bits - 1) // 64
         bit_offset = start_bit % 64
-        low = unsigned[start_word] >> bit_offset
+        low = (words[start_word] & 0xFFFFFFFFFFFFFFFF) >> bit_offset
         if end_word == start_word:
             value = low & mask
         else:
-            high = unsigned[end_word] << (64 - bit_offset)
+            high = (words[end_word] & 0xFFFFFFFFFFFFFFFF) << (64 - bit_offset)
             value = (low | high) & mask
-        values.append(value)
-    return values
+        yield value
 
 
-def pack_block_states(values: list[int], bits: int) -> list[int]:
+def unpack_block_states(
+    words: list[int],
+    volume: int,
+    bits: int,
+    *,
+    allow_trailing_words: bool = True,
+) -> list[int]:
+    return list(
+        iter_block_states(
+            words,
+            volume,
+            bits,
+            allow_trailing_words=allow_trailing_words,
+        )
+    )
+
+
+def pack_block_states(
+    values: Iterable[int],
+    bits: int,
+    *,
+    expected_count: int | None = None,
+) -> list[int]:
     if bits < 1 or bits > 32:
         raise ValueError("bits must be between 1 and 32")
     limit = 1 << bits
-    if any(value < 0 or value >= limit for value in values):
-        raise ValueError("palette index does not fit selected bit width")
-    words = [0] * math.ceil(len(values) * bits / 64)
+    words = (
+        [0] * math.ceil(expected_count * bits / 64)
+        if expected_count is not None
+        else []
+    )
     mask = limit - 1
+    count = 0
     for index, raw in enumerate(values):
+        if raw < 0 or raw >= limit:
+            raise ValueError("palette index does not fit selected bit width")
+        count += 1
         value = raw & mask
         start_bit = index * bits
         word_index = start_bit // 64
         offset = start_bit % 64
+        while len(words) <= word_index:
+            words.append(0)
         words[word_index] |= (value << offset) & 0xFFFFFFFFFFFFFFFF
         if offset + bits > 64:
+            while len(words) <= word_index + 1:
+                words.append(0)
             words[word_index + 1] |= value >> (64 - offset)
+    if expected_count is not None and count != expected_count:
+        raise ValueError(
+            f"packed value count {count} does not match expected count {expected_count}"
+        )
     return [word if word < 1 << 63 else word - (1 << 64) for word in words]
 
 
@@ -145,8 +186,8 @@ def parse_litematic(
     global_state_to_id: dict[str, int] = {}
     palette: list[PaletteEntry] = []
     regions: list[BuildRegion] = []
-    region_blocks: dict[str, dict[IntVector3, int]] = {}
-    blocks: dict[IntVector3, int] = {}
+    region_blocks: dict[str, ChunkedVoxelMap] = {}
+    seen = ChunkedVoxelMap()
     block_entities: list[CanonicalBlockEntity] = []
     entities: list[CanonicalEntity] = []
     pending_block_ticks: list[dict[str, Any]] = []
@@ -178,16 +219,15 @@ def parse_litematic(
         words = raw_region.get("BlockStates")
         if not isinstance(words, list) or not all(isinstance(word, int) and not isinstance(word, bool) for word in words):
             raise FormatError("LITEMATIC_BLOCKSTATES_TYPE", "BlockStates must be an NBT long array.")
-        values = unpack_block_states(words, volume, bits_per_entry(len(local_states)))
-        if any(value >= len(local_states) for value in values):
-            bad = next(value for value in values if value >= len(local_states))
-            raise FormatError(
-                "PALETTE_INDEX_OUT_OF_RANGE",
-                "Litematic block data references a missing palette entry.",
-                {"index": bad, "region": region_name},
-            )
-        region_values: dict[IntVector3, int] = {}
+        values = iter_block_states(words, volume, bits_per_entry(len(local_states)))
+        region_values = ChunkedVoxelMap()
         for index, local_palette_id in enumerate(values):
+            if local_palette_id >= len(local_states):
+                raise FormatError(
+                    "PALETTE_INDEX_OUT_OF_RANGE",
+                    "Litematic block data references a missing palette entry.",
+                    {"index": local_palette_id, "region": region_name},
+                )
             y, rem = divmod(index, dimensions.x * dimensions.z)
             z, x = divmod(rem, dimensions.x)
             # Litematica's container dimensions are absolute and the voxel array is based
@@ -197,9 +237,9 @@ def parse_litematic(
             if palette[global_id].is_air_like:
                 continue
             region_values[world] = global_id
-            if world in blocks:
+            if world in seen:
                 overlap_count += 1
-            blocks[world] = global_id
+            seen[world] = global_id
         region_blocks[region_name] = region_values
 
         for raw_be in require_list(raw_region.get("TileEntities", []), f"Regions.{region_name}.TileEntities"):
@@ -300,6 +340,16 @@ def parse_litematic(
                     "sourceRegionsPreserved": True,
                 },
             )
+        )
+    flat_count = len(seen)
+    del seen
+    if len(region_blocks) == 1:
+        blocks = next(iter(region_blocks.values()))
+    else:
+        blocks = RegionOverlayVoxelMap(
+            region_blocks,
+            order=sorted(region_blocks),
+            count=flat_count,
         )
     return BuildDocument(
         schema_version="1.1.0",

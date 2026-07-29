@@ -40,6 +40,21 @@ This matrix describes the mandatory offline Python profile, not the optional hos
 | Reference-style authoring | **Implemented** | Style profiles, critique, durable anchors, truss/dormer/arcade/bellcast assemblies, fixtures, symmetry edits, greebling, and controlled repetition remain bounded patch operations. |
 | Meduseld traceability | **Implemented** | `MEDUSELD_IMPLEMENTATION_TRACEABILITY.md` maps every report item to code, tests, and real-schematic acceptance evidence. |
 
+## Large-schematic capabilities (1.2.0)
+
+| Capability | Status | Grounded behavior |
+|---|---|---|
+| Chunk-array voxel model | **Implemented** | Sparse 16-cubed `uint32` chunks provide deterministic mapping semantics; lazy region overlays avoid a duplicate flattened Litematic map. |
+| Streamed schematic lifecycle | **Implemented** | Sponge/Litematic decoding, canonical hashing/read/write, block-map output and export avoid per-cell Python lists or duplicate JSON payloads. |
+| Scale budget | **Implemented; generated gate passed** | The matrix stores 16,777,216 placed voxels in 64 MiB of voxel arrays and streams 4,194,304 Litematic values. Whole-process memory includes additional documented inputs/assets/analysis buffers. |
+| Exact tile-local rendering | **Implemented** | Tile geometry counts only emitted blocks, semantic maps are disk-backed, checkpoints are hash-validated, and a 2,097,152-block dense fixture exercises exact resume determinism. |
+| Honest LOD | **Implemented** | Large fast overviews use nearest-depth sampling and explicitly report LOD/non-exact status and source count. |
+| Terrain-relative structures | **Implemented** | Local surface, cavity, verticality, enclosure, regularity and embedding evidence prevent terrain skins from becoming buildings without making material-specific assumptions. |
+| Fluids and entities | **Implemented** | Water/lava levels, waterlogging and all five entity-rendered families count as covered only when their renderer paths resolve. |
+| Universality edge matrix | **Implemented** | Rich 50,000 block entities, y=-64..320, 2,000 states, terrain-only and material-independent castle/bridge/dungeon cases are release tests. |
+| Anvil worlds | **Explicitly unsupported** | `.mca` and world directories return `ANVIL_WORLD_UNSUPPORTED`; supported scope remains schematic files. |
+| Named Tree fixture | **Pending source availability** | Code and generated scale gates are implemented, but the untouched `Tree_of_dreams.schem` must be supplied before its exact end-to-end gate can pass. |
+
 ## Literal vision and exact identity
 
 The system does not ask an AI to infer block identity from pixels. The model receives literal rendered PNGs for appearance and geometry, while exact canonical tools and pixel-hit maps provide namespaced IDs, ordered properties, NBT and coordinates. This directly implements the master prompt's central visual-symbolic rule.

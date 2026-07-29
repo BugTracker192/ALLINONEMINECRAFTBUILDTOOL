@@ -42,6 +42,7 @@ def inventory_structures(
     separation: int = 2,
     minimum_blocks: int = 24,
     window_edge: int = 64,
+    classification_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = Path(run)
     document = load_document(root)
@@ -52,6 +53,7 @@ def inventory_structures(
             "separation": separation,
             "minimum_blocks": minimum_blocks,
             "window_edge": window_edge,
+            "classification_config": classification_config or {},
         },
     )
     job.state = JobState.RUNNING
@@ -64,6 +66,7 @@ def inventory_structures(
         minimum_blocks=minimum_blocks,
         names=_existing_names(root),
         window_edge=window_edge,
+        classification_config=classification_config,
     )
     analysis_path = root / "analysis.json"
     if analysis_path.is_file():
@@ -160,7 +163,10 @@ def extract_structure(
 ) -> dict[str, Any]:
     root = Path(output)
     structure = _find_structure(run, identifier)
-    document = scoped_document(load_document(run), resolve_structure_bounds(run, identifier))
+    document = load_document(
+        run,
+        bounds=resolve_structure_bounds(run, identifier),
+    )
     document.metadata = {
         **document.metadata,
         "structure": {

@@ -5930,4 +5930,23 @@ real-schematic acceptance evidence.
 - `docs/cli/offline-cli.md`
 - `docs/troubleshooting/assets.md`
 
+## Appendix D - 1.2.0 large-schematic operating contract
+
+The complete, normative appendix is
+`docs/agent/LARGE_SCHEMATIC_AUTONOMOUS_APPENDIX.md`. It is part of this manual
+and must be read before any large-schematic import, analysis, render, edit or
+export.
+
+It exhaustively documents every 1.1/1.2 command/subcommand and parameter, the
+patch envelope and preconditions, every supported patch operation, scale/RAM
+envelopes, chunk-array streaming, scoped work, exact tiled/resumable rendering,
+honest LOD, disk-backed semantic maps, renderer-backed entity/fluid coverage,
+verification-on export, warm-cache completeness and hostile-environment
+recovery.
+
+Anvil world saves are explicitly outside the schematic-only scope. The exact
+Tree of Dreams acceptance gate must remain pending until the untouched
+`Tree_of_dreams.schem` is available. See
+`TREE_OF_DREAMS_IMPLEMENTATION_TRACEABILITY.md` for the full A-J evidence map.
+
 End of autonomous LLM operating manual.

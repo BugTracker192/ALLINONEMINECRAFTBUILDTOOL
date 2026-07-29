@@ -7666,3 +7666,27 @@ python -m app.cli interior packet RUN_ROOT \
 Review `interior_packet.json`, `accepted_views.json`, `camera_rejections.json`, `quality_metrics.json`, and `diagnostics.json` before making a spatial claim. A degraded view is evidence of an unresolved limitation, not an accepted room presentation. `physical_first_person` and `third_person_cutaway` are deliberately separate files so their provenance cannot be confused.
 
 The packet’s exact source `content_hash`, room classification, feature coordinates, camera mode, reachability, cutaway boundary classes, hidden coordinates, metrics, and fallback path are the authoritative evidence record. Every visible perspective and slice pixel remains compatible with `pixel-to-block`; invisible or removed cutaway blocks must be queried from canonical truth instead of inferred.
+
+# APPENDIX D - 1.2.0 LARGE-SCHEMATIC OPERATING CONTRACT
+
+The complete, normative Appendix D is
+`docs/agent/LARGE_SCHEMATIC_AUTONOMOUS_APPENDIX.md`. It is part of this manual,
+not optional further reading. An autonomous agent must read it before importing,
+analyzing, rendering, editing or exporting a large schematic.
+
+It contains the exhaustive parameter schemas for every 1.1/1.2 command
+extension (`analyze`, `render`, `export`, quality/map/texture tools, every
+`author`, `structure`, and `interior` subcommand), the patch envelope,
+preconditions, and every supported primitive, geometry, transform, material,
+block-entity, repeat/symmetry/greeble and compound assembly operation.
+
+Its scale contract is authoritative: chunk-array/streamed I/O, declared
+100,000,000-cell and 65,536-state guards, per-tile emitted-geometry limits,
+disk-backed semantic maps, exact resumable tiling, honest LOD, scoped loading,
+verification-on export, fluid/entity renderer accounting, and fixture-scoped
+evidence. Anvil worlds are explicitly unsupported.
+
+The exact Tree of Dreams gate remains pending until the unmodified
+`Tree_of_dreams.schem` is available. Never mark that named gate passed from a
+different file or generated fixture. Use
+`TREE_OF_DREAMS_IMPLEMENTATION_TRACEABILITY.md` for the complete A-J mapping.

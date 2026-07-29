@@ -9,21 +9,47 @@ from typing import Any
 from mbi.ai.construction import AutonomousConstructionExecutor, ConstructionBrief
 from mbi.analysis import analyze_document
 from mbi.canonical import BuildDocument, IntBoundingBox, IntVector3
+from mbi.errors import FormatError
 from mbi.export import export_litematic, export_sponge_v3, verify_round_trip
 from mbi.importer import import_build
 from mbi.patch import PatchEngine
-from mbi.scoping import scoped_document
 
 from app.assets import open_resource_pack
 from app.errors import AppError
 from app.jobs import JobRecord, JobState
-from app.project import (initialize_layout, load_document, load_patch_engine, persist_patch_engine, preserve_source, save_document, write_diagnostics)
+from app.project import (
+    initialize_layout,
+    load_document,
+    load_patch_engine,
+    persist_patch_engine,
+    preserve_source,
+    save_document,
+    write_diagnostics,
+)
 from app.render import CameraSpec, SoftwareRenderer
 from app.storage import atomic_write_bytes, atomic_write_json
 
 
 def import_file(source: str | Path, output_root: str | Path) -> BuildDocument:
     source_path = Path(source)
+    if source_path.is_dir():
+        has_anvil_regions = (source_path / "region").is_dir() or any(
+            source_path.glob("*.mca")
+        )
+        raise FormatError(
+            "ANVIL_WORLD_UNSUPPORTED" if has_anvil_regions else "IMPORT_SOURCE_NOT_FILE",
+            (
+                "Anvil world directories are not supported; export the required area "
+                "to a Sponge .schem or Litematic .litematic first."
+                if has_anvil_regions
+                else "Import source must be a supported schematic file, not a directory."
+            ),
+            {
+                "source": str(source_path),
+                "supportedInputs": [".schem", ".litematic", ".schematic"],
+                "scopeDecision": "schematic-files-only",
+            },
+        )
     root = Path(output_root)
     initialize_layout(root)
     data = source_path.read_bytes()
@@ -62,8 +88,8 @@ def analyze_run(
     seal_structure_envelope: bool = False,
 ) -> dict[str, Any]:
     root = Path(run_root)
-    source_document = load_document(root)
-    document = scoped_document(source_document, bounds) if bounds is not None else source_document
+    source_document = load_document(root, bounds=bounds)
+    document = source_document
     configuration = {
         "profile": "bounded" if bounds else "full",
         "bounds": asdict(document.bounds),
@@ -79,7 +105,12 @@ def analyze_run(
             for room_bounds, seed in manual_rooms
         ],
     }
-    job = JobRecord.create("analysis", {"build": source_document.content_hash}, configuration)
+    parent_hash = (
+        source_document.metadata.get("scope", {}).get("parent_content_hash")
+        if bounds is not None
+        else source_document.content_hash
+    )
+    job = JobRecord.create("analysis", {"build": parent_hash}, configuration)
     job.state = JobState.RUNNING
     job.stage = "analysis"
     job.persist(root)
@@ -96,7 +127,7 @@ def analyze_run(
             "schema_version": "mbi.analysis.v2",
             "build_version_hash": document.content_hash,
             "parent_build_version_hash": (
-                source_document.content_hash if bounds is not None else None
+                parent_hash if bounds is not None else None
             ),
             "scope": {
                 "type": "bounds" if bounds is not None else "document",
@@ -350,7 +381,7 @@ def export_run(run_root: str | Path, *, format_name: str, verify: bool = True) -
     report = verify_round_trip(document, data, filename) if verify else None
     reparsed = import_build(data, filename) if verify else None
     payload = {
-        "passed": bool(report.valid) if report else None,
+        "passed": bool(report.valid) if report else "skipped",
         "source_version": "ver_" + document.content_hash[:20],
         "export_format": normalized_format,
         "artifact": f"export/{filename}",
@@ -364,7 +395,12 @@ def export_run(run_root: str | Path, *, format_name: str, verify: bool = True) -
         "block_entity_mismatches": report.block_entity_mismatches if report else None,
         "entity_mismatches": report.entity_mismatches if report else None,
         "accepted_loss": [],
-        "messages": list(report.messages) if report else [],
+        "messages": (
+            list(report.messages)
+            if report
+            else ["Round-trip verification was deliberately skipped with --no-verify."]
+        ),
+        "verification": "performed" if report else "skipped",
         "hashes": {"source": document.content_hash, "reimported": report.exported_hash if report else None},
     }
     atomic_write_json(root / "export" / "verify_report.json", payload)
@@ -381,7 +417,7 @@ def pipeline(
     size: tuple[int, int] = (512, 512),
 ) -> dict[str, Any]:
     document = import_file(source, output_root)
-    analysis = analyze_run(output_root)
+    analyze_run(output_root)
     snapshots = snapshot_run(output_root, resource_pack=resource_pack, size=size)
     export_report = export_run(output_root, format_name=export_format, verify=True)
     return {

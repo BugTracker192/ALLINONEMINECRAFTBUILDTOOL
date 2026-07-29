@@ -141,12 +141,13 @@ def update_overlay(
     overlay = {
         "schema": "mbi.release-manifest-overlay.v1",
         "base_version": str(base["version"]),
-        "feature_revision": "1.1.0-meduseld-quality-map-maker",
+        "feature_revision": "1.2.0-tree-of-dreams-large-schematic",
         "description": (
-            "Meduseld correctness fixes, complete texture/entity coverage, exact resumable "
-            "rendering, whole-volume comprehension, scoped interior intelligence, quality "
-            "feedback, structure/map analysis, and reference-style authoring. Base release "
-            "files remain hash-locked; only listed overrides and additions are permitted."
+            "Large-schematic chunk-array and streaming architecture, exact tile-local "
+            "resumable rendering, honest LOD, terrain-relative structure classification, "
+            "renderer-backed fluid/entity coverage, verified export defaults, scale and "
+            "universality gates, and complete autonomous schemas. Base release files "
+            "remain hash-locked; only listed overrides and additions are permitted."
         ),
         "base_manifest_git_blob_sha": _git(repository, "hash-object", str(base_path)),
         "additions": additions,
@@ -176,6 +177,10 @@ def update_overlay(
             "quality_scorecard_and_gate": "passed",
             "reference_style_authoring": "passed",
             "meduseld_traceability": "passed",
+            "tree_of_dreams_implementation_traceability": "passed",
+            "large_schematic_generated_matrix": "passed",
+            "tree_of_dreams_named_fixture": "source-unavailable-not-executed",
+            "anvil_world_scope": "explicitly-unsupported",
             "legacy_regression": "passed",
             "hosted_ci": hosted_ci_status,
             "japan_benchmark": "download-blocked-not-executed",

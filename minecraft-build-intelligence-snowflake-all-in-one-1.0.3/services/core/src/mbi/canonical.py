@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import MutableMapping
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
@@ -175,10 +176,10 @@ class BuildDocument:
     origin: IntVector3
     palette: list[PaletteEntry]
     regions: list[BuildRegion]
-    blocks: dict[IntVector3, int]
+    blocks: MutableMapping[IntVector3, int]
     # Each source region retains its independent global-coordinate voxel field. This is
     # essential for lossless overlap handling and preserved multi-region Litematic export.
-    region_blocks: dict[str, dict[IntVector3, int]] = field(default_factory=dict)
+    region_blocks: dict[str, MutableMapping[IntVector3, int]] = field(default_factory=dict)
     block_entities: list[CanonicalBlockEntity] = field(default_factory=list)
     entities: list[CanonicalEntity] = field(default_factory=list)
     pending_block_ticks: list[dict[str, Any]] = field(default_factory=list)
@@ -188,11 +189,10 @@ class BuildDocument:
     content_hash: str = ""
 
     def __post_init__(self) -> None:
-        if not self.region_blocks and self.regions:
+        if not self.region_blocks and len(self.regions) == 1:
             # Single-region formats and older stored documents still receive a useful
             # region field without changing their flattened semantics.
-            if len(self.regions) == 1:
-                self.region_blocks = {self.regions[0].name: dict(self.blocks)}
+            self.region_blocks = {self.regions[0].name: self.blocks}
         if not self.content_hash:
             self.content_hash = self.compute_content_hash()
 
@@ -224,20 +224,24 @@ class BuildDocument:
         return palette[palette_id]
 
     def iter_non_air(self) -> Iterable[tuple[IntVector3, PaletteEntry]]:
+        from .voxel import iter_items_sorted
+
         palette = self.palette_by_id()
-        for position, palette_id in sorted(self.blocks.items()):
+        for position, palette_id in iter_items_sorted(self.blocks):
             entry = palette[palette_id]
             if not entry.is_air_like:
                 yield position, entry
 
     def rebuild_flattened_from_regions(self, order: Iterable[str] | None = None) -> None:
+        from .voxel import ChunkedVoxelMap, iter_items_sorted
+
         if not self.region_blocks:
             return
         ordered_names = list(order) if order is not None else sorted(self.region_blocks)
-        flattened: dict[IntVector3, int] = {}
+        flattened = ChunkedVoxelMap()
         palette = self.palette_by_id()
         for name in ordered_names:
-            for position, palette_id in sorted(self.region_blocks.get(name, {}).items()):
+            for position, palette_id in iter_items_sorted(self.region_blocks.get(name, {})):
                 if palette[palette_id].is_air_like:
                     flattened.pop(position, None)
                 else:
@@ -246,21 +250,12 @@ class BuildDocument:
         self.content_hash = self.compute_content_hash()
 
     def compute_content_hash(self) -> str:
+        from .voxel import iter_items_sorted
+
         palette_payload = [
             {"id": p.palette_id, "state": p.canonical_state}
             for p in sorted(self.palette, key=lambda p: p.palette_id)
         ]
-        block_payload = [
-            [position.x, position.y, position.z, palette_id]
-            for position, palette_id in sorted(self.blocks.items())
-        ]
-        region_payload = {
-            name: [
-                [position.x, position.y, position.z, palette_id]
-                for position, palette_id in sorted(region.items())
-            ]
-            for name, region in sorted(self.region_blocks.items())
-        }
         block_entities = [
             {
                 "pos": be.position.as_tuple(),
@@ -274,21 +269,56 @@ class BuildDocument:
             {"pos": entity.position, "id": entity.namespaced_id, "region": entity.region_name, "data": entity.data}
             for entity in sorted(self.entities, key=lambda entity: (entity.region_name or "", entity.position or (0, 0, 0)))
         ]
-        encoded = json.dumps(
-            {
-                "palette": palette_payload,
-                "blocks": block_payload,
-                "regions": region_payload,
-                "blockEntities": block_entities,
-                "entities": entities,
-                "pendingBlockTicks": self.pending_block_ticks,
-                "pendingFluidTicks": self.pending_fluid_ticks,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
-        ).encode()
-        return hashlib.sha256(encoded).hexdigest()
+        digest = hashlib.sha256()
+
+        def emit(value: str) -> None:
+            digest.update(value.encode())
+
+        def emit_small(value: Any) -> None:
+            emit(
+                json.dumps(
+                    value,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                )
+            )
+
+        def emit_rows(values: Any) -> None:
+            emit("[")
+            first = True
+            for position, palette_id in iter_items_sorted(values):
+                if not first:
+                    emit(",")
+                first = False
+                emit(f"[{position.x},{position.y},{position.z},{palette_id}]")
+            emit("]")
+
+        # This is the exact sort_keys=True order of the legacy materialized
+        # payload. Keep it explicit and oracle-tested.
+        emit('{"blockEntities":')
+        emit_small(block_entities)
+        emit(',"blocks":')
+        emit_rows(self.blocks)
+        emit(',"entities":')
+        emit_small(entities)
+        emit(',"palette":')
+        emit_small(palette_payload)
+        emit(',"pendingBlockTicks":')
+        emit_small(self.pending_block_ticks)
+        emit(',"pendingFluidTicks":')
+        emit_small(self.pending_fluid_ticks)
+        emit(',"regions":{')
+        first_region = True
+        for name, values in sorted(self.region_blocks.items()):
+            if not first_region:
+                emit(",")
+            first_region = False
+            emit(json.dumps(name))
+            emit(":")
+            emit_rows(values)
+        emit("}}")
+        return digest.hexdigest()
 
     def to_summary(self) -> dict[str, Any]:
         non_air = sum(1 for _ in self.iter_non_air())

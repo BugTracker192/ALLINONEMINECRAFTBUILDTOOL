@@ -5,7 +5,7 @@ backend-path = ["."]
 
 [project]
 name = "minecraft-build-intelligence"
-version = "1.1.0"
+version = "1.2.0"
 description = "Offline Minecraft Java build intelligence, CPU rendering, AI tooling, editing, and verified export platform"
 readme = "README.md"
 requires-python = ">=3.12"

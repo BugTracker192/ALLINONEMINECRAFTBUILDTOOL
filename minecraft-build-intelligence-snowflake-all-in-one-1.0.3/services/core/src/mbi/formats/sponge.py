@@ -16,8 +16,17 @@ from ..compression import Compression
 from ..errors import FormatError
 from ..limits import NBTLimits, checked_volume
 from ..palette import parse_block_state
-from .common import build_id_from_hash, ensure_air_palette, int_value, require_bytes, require_compound, require_list, source_metadata
-from .varint import decode_unsigned_varints
+from ..voxel import ChunkedVoxelMap
+from .common import (
+    build_id_from_hash,
+    ensure_air_palette,
+    int_value,
+    require_bytes,
+    require_compound,
+    require_list,
+    source_metadata,
+)
+from .varint import iter_unsigned_varints
 
 
 def _parse_palette(raw: Any, limits: NBTLimits) -> tuple[list[PaletteEntry], dict[int, int]]:
@@ -82,18 +91,29 @@ def parse_sponge(
         data_raw = schematic.get("BlockData")
         block_entities_raw = schematic.get("BlockEntities", schematic.get("TileEntities", []))
     palette, source_to_canonical = _parse_palette(palette_raw, limits)
-    data = decode_unsigned_varints(require_bytes(data_raw, "BlockData"), expected_count=volume)
-    if any(value not in source_to_canonical for value in data):
-        bad = next(value for value in data if value not in source_to_canonical)
-        raise FormatError("PALETTE_INDEX_OUT_OF_RANGE", "Block data references a palette index that does not exist.", {"index": bad})
-
-    blocks: dict[IntVector3, int] = {}
+    blocks = ChunkedVoxelMap()
     palette_by_id = {entry.palette_id: entry for entry in palette}
+    air_like = {
+        source_id: palette_by_id[canonical_id].is_air_like
+        for source_id, canonical_id in source_to_canonical.items()
+    }
+    plane = width * length
+    data = iter_unsigned_varints(
+        require_bytes(data_raw, "BlockData"),
+        expected_count=volume,
+    )
     for index, source_palette_id in enumerate(data):
-        y, rem = divmod(index, width * length)
+        is_air = air_like.get(source_palette_id)
+        if is_air is None:
+            raise FormatError(
+                "PALETTE_INDEX_OUT_OF_RANGE",
+                "Block data references a palette index that does not exist.",
+                {"index": source_palette_id},
+            )
+        y, rem = divmod(index, plane)
         z, x = divmod(rem, width)
         canonical_id = source_to_canonical[source_palette_id]
-        if not palette_by_id[canonical_id].is_air_like:
+        if not is_air:
             blocks[IntVector3(offset.x + x, offset.y + y, offset.z + z)] = canonical_id
 
     block_entities: list[CanonicalBlockEntity] = []
