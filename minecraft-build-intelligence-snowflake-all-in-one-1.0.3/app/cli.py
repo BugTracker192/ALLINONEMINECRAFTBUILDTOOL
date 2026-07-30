@@ -3,17 +3,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
 from mbi.canonical import IntBoundingBox, IntVector3
 from mbi.chunking import CHUNK_SIZE, build_chunks
 
+from app.config import RuntimeConfig
 from app.errors import AppError
-from app.project import clone_run_base, load_document, parse_box, parse_vec
+from app.project import clone_run_base, load_document, parse_box
 from app.render import CameraSpec, SoftwareRenderer, block_to_pixel, pixel_to_block
 from app.storage import atomic_write_json
 from app.workflows import (
@@ -157,7 +157,17 @@ def _query(args: argparse.Namespace) -> Any:
 def _render(args: argparse.Namespace) -> Any:
     from app.assets import open_resource_pack
 
-    document = load_document(args.run)
+    crop = None
+    if args.crop:
+        values = [int(item) for item in args.crop.split(",")]
+        if len(values) != 6:
+            raise AppError("CROP_SPEC", "Crop must contain x,y,z,width,height,length.", exit_code=2)
+        x, y, z, width, height, length = values
+        crop = IntBoundingBox(
+            IntVector3(x, y, z),
+            IntVector3(x + width - 1, y + height - 1, z + length - 1),
+        )
+    document = load_document(args.run, bounds=crop)
     pack = (
         open_resource_pack(args.resource_pack)
         if args.accuracy == "exact"
@@ -165,7 +175,25 @@ def _render(args: argparse.Namespace) -> Any:
     )
     effective_mode = "flat" if args.accuracy == "fast" else args.mode
     try:
-        renderer = SoftwareRenderer(document, resource_pack=pack, strict_textures=args.strict_textures, seed=args.seed)
+        config = RuntimeConfig.from_environment()
+        if args.max_visible_blocks is not None:
+            if args.max_visible_blocks <= 0:
+                raise AppError(
+                    "RENDER_BLOCK_LIMIT_INVALID",
+                    "--max-visible-blocks must be positive.",
+                    exit_code=2,
+                )
+            config = replace(
+                config,
+                max_visible_blocks=args.max_visible_blocks,
+            )
+        renderer = SoftwareRenderer(
+            document,
+            resource_pack=pack,
+            config=config,
+            strict_textures=args.strict_textures,
+            seed=args.seed,
+        )
         if args.slice:
             axis, spec = args.slice.split(":", 1)
             if ".." in spec:
@@ -185,13 +213,6 @@ def _render(args: argparse.Namespace) -> Any:
                 name=args.name,
             )
         else:
-            crop = None
-            if args.crop:
-                values = [int(item) for item in args.crop.split(",")]
-                if len(values) != 6:
-                    raise AppError("CROP_SPEC", "Crop must contain x,y,z,width,height,length.", exit_code=2)
-                x, y, z, width, height, length = values
-                crop = IntBoundingBox(IntVector3(x, y, z), IntVector3(x + width - 1, y + height - 1, z + length - 1))
             if args.view:
                 camera = CameraSpec.preset(args.view)
                 camera = CameraSpec(
@@ -213,10 +234,27 @@ def _render(args: argparse.Namespace) -> Any:
                     args.fit,
                     args.margin,
                 )
+            effective_tile_size = args.tile_size
+            auto_tiled = False
+            if (
+                args.accuracy == "exact"
+                and effective_tile_size == 0
+                and len(document.blocks) > config.max_visible_blocks
+            ):
+                effective_tile_size = min(512, config.max_render_size)
+                auto_tiled = True
+            use_lod = (
+                args.accuracy == "fast"
+                and len(document.blocks) > config.max_visible_blocks
+            )
             render_method = (
-                renderer.render_tiled
-                if args.tile_size
-                else renderer.render
+                renderer.render_lod
+                if use_lod
+                else (
+                    renderer.render_tiled
+                    if effective_tile_size
+                    else renderer.render
+                )
             )
             render_options = {
                 "camera": camera,
@@ -229,10 +267,14 @@ def _render(args: argparse.Namespace) -> Any:
                 "exclude_states": tuple(args.hide_material or ()),
                 "name": args.name,
             }
-            if args.tile_size:
-                render_options["tile_size"] = args.tile_size
+            if use_lod:
+                render_options["resume"] = args.resume
+            elif effective_tile_size:
+                render_options["tile_size"] = effective_tile_size
                 render_options["resume"] = args.resume
             result = render_method(args.out or args.run, **render_options)
+            if auto_tiled:
+                result.manifest.setdefault("tiled", {})["auto_enabled"] = True
         result.manifest["accuracy"] = {
             "profile": args.accuracy,
             "texture_exact": (
@@ -344,7 +386,12 @@ def build_parser() -> argparse.ArgumentParser:
     command = sub.add_parser("export")
     command.add_argument("run")
     command.add_argument("--format", choices=("schem", "litematic"), required=True)
-    command.add_argument("--verify", action="store_true")
+    command.add_argument(
+        "--verify",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Verify export by exact re-import (default: enabled); use --no-verify deliberately.",
+    )
     command.add_argument("--out")
 
     command = sub.add_parser("pipeline")
@@ -409,6 +456,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Enable exact checkpointed screen-tiled rendering with TILE_SIZE "
             "pixels per tile (recommended: 256-1024)."
+        ),
+    )
+    command.add_argument(
+        "--max-visible-blocks",
+        type=int,
+        help=(
+            "Maximum projected blocks per render tile; defaults to "
+            "MBI_MAX_VISIBLE_BLOCKS or 250000."
         ),
     )
     command.add_argument(

@@ -92,8 +92,9 @@ def navigation_graph(
     unseen = set(nodes)
     components: list[NavigationComponent] = []
     node_component: dict[IntVector3, int] = {}
-    while unseen:
-        start = min(unseen)
+    for start in sorted(unseen):
+        if start not in unseen:
+            continue
         unseen.remove(start)
         queue = deque([start])
         points = []

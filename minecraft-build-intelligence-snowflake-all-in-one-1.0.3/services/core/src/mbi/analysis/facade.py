@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from itertools import pairwise
 from statistics import fmean, pstdev
 
 from ..canonical import BuildDocument, IntVector3
@@ -49,8 +50,9 @@ def facade_report(document: BuildDocument) -> dict[str, object]:
         # Flood-fill same-depth, same-state facade patches in 2D.
         unseen = set(exposed)
         patches = []
-        while unseen:
-            start = min(unseen)
+        for start in sorted(unseen):
+            if start not in unseen:
+                continue
             unseen.remove(start)
             stack = [start]
             points = []
@@ -81,7 +83,7 @@ def facade_report(document: BuildDocument) -> dict[str, object]:
         spacing = []
         for values in window_rows.values():
             values.sort()
-            spacing.extend(b - a for a, b in zip(values, values[1:]))
+            spacing.extend(b - a for a, b in pairwise(values))
         per_face[direction] = {
             "surfaceCells": len(exposed),
             "depthAxis": depth_axis,
@@ -103,7 +105,7 @@ def facade_report(document: BuildDocument) -> dict[str, object]:
             silhouette_tops[u] = max(y, silhouette_tops.get(u, y))
         ordered_tops = [silhouette_tops[u] for u in sorted(silhouette_tops)]
         silhouette_step = (
-            fmean(abs(right - left) for left, right in zip(ordered_tops, ordered_tops[1:]))
+            fmean(abs(right - left) for left, right in pairwise(ordered_tops))
             if len(ordered_tops) >= 2
             else 0.0
         )

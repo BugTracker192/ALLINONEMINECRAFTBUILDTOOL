@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.2.0 — 2026-07-29 — Tree of Dreams large-schematic architecture
+
+- Replaced per-voxel Python dictionaries/lists in large import/load/label paths
+  with streamed decoders and sparse dense-`uint32` chunk maps.
+- Added byte-identical streamed canonical hashing/read/write and bounded
+  loading with full content-hash validation.
+- Added streaming Litematic bit unpack/pack, lazy multi-region overlays and
+  streaming Sponge/Litematic exports.
+- Made exact rendering tile-local and resumable with disk-backed semantic maps,
+  emitted-geometry budgets and a total tile-work ceiling.
+- Added a real nearest-depth LOD path whose manifest is explicitly non-exact.
+- Reworked structure segmentation/classification around local terrain,
+  verticality, enclosure, regularity and surface embedding, with
+  material-independent negative guards.
+- Added genuine fluid-rendered texture accounting, general water/lava and
+  waterlogged geometry coverage, verification-on export and unknown lighting.
+- Added 16.8-million-voxel, 4.2-million Litematic-state, 2.1-million exact
+  render, 50,000 block-entity, modern-height and 2,000-state release gates.
+- Declared Anvil world saves out of scope with a typed error and tightened
+  parser limits to the documented tested envelope.
+- Included all bundled asset parts in warm-cache source archives with manifest
+  size/hash validation.
+- Added exhaustive autonomous large-schematic command/patch documentation and
+  A-J traceability. The exact Tree source gate remains pending because the
+  unmodified `Tree_of_dreams.schem` was not supplied in this checkout.
+
 ## 1.1.0 — 2026-07-29 — Meduseld quality and map-maker release
 
 - Fixed Litematic block-entity local coordinates/ID normalization and made all

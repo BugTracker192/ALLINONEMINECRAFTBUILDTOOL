@@ -44,22 +44,22 @@ def export_sponge_v3(document: BuildDocument, *, data_version: int | None = None
         ordered_states.insert(0, "minecraft:air")
     state_to_export = {state: index for index, state in enumerate(ordered_states)}
     palette_by_id = document.palette_by_id()
-    values: list[int] = []
-    for y in range(dimensions.y):
-        for z in range(dimensions.z):
-            for x in range(dimensions.x):
-                position = IntVector3(
-                    document.bounds.min.x + x,
-                    document.bounds.min.y + y,
-                    document.bounds.min.z + z,
-                )
-                source_id = document.blocks.get(position)
-                state = (
-                    palette_by_id[source_id].canonical_state
-                    if source_id is not None
-                    else "minecraft:air"
-                )
-                values.append(state_to_export[state])
+    def values():
+        for y in range(dimensions.y):
+            for z in range(dimensions.z):
+                for x in range(dimensions.x):
+                    position = IntVector3(
+                        document.bounds.min.x + x,
+                        document.bounds.min.y + y,
+                        document.bounds.min.z + z,
+                    )
+                    source_id = document.blocks.get(position)
+                    state = (
+                        palette_by_id[source_id].canonical_state
+                        if source_id is not None
+                        else "minecraft:air"
+                    )
+                    yield state_to_export[state]
     palette_compound = {state: (Tag.INT, index) for state, index in state_to_export.items()}
     block_entities = [
         _entity_payload(item, document.bounds.min, block_entity=True)
@@ -74,7 +74,7 @@ def export_sponge_v3(document: BuildDocument, *, data_version: int | None = None
     ]
     blocks_compound = {
         "Palette": (Tag.COMPOUND, palette_compound),
-        "Data": (Tag.BYTE_ARRAY, encode_unsigned_varints(values)),
+        "Data": (Tag.BYTE_ARRAY, encode_unsigned_varints(values())),
         "BlockEntities": (Tag.LIST, (Tag.COMPOUND, block_entities)),
     }
     schematic = {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -29,10 +30,8 @@ def atomic_write_bytes(path: Path, data: bytes) -> Path:
             os.fsync(stream.fileno())
         os.replace(temp_name, path)
     finally:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temp_name)
-        except FileNotFoundError:
-            pass
     return path
 
 
@@ -41,7 +40,26 @@ def deterministic_json_bytes(value: Any) -> bytes:
 
 
 def atomic_write_json(path: Path, value: Any) -> Path:
-    return atomic_write_bytes(path, deterministic_json_bytes(value))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    encoder = json.JSONEncoder(
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            for chunk in encoder.iterencode(value):
+                stream.write(chunk)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temp_name)
+    return path
 
 
 class FileSystemStorage:

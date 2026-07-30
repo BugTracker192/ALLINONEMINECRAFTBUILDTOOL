@@ -24,7 +24,7 @@ def test_stdlib_backend_has_no_build_requirements_and_builds_complete_wheel(tmp_
         assert f"{build_backend.DIST_INFO}/RECORD" in names
         assert f"{build_backend.DIST_INFO}/AUTONOMOUS_LLM_AGENT_GUIDE.md" in names
         metadata = archive.read(f"{build_backend.DIST_INFO}/METADATA").decode("utf-8")
-        assert "Version: 1.1.0" in metadata
+        assert "Version: 1.2.0" in metadata
         assert "pytest-asyncio<2,>=1" in metadata
 
 

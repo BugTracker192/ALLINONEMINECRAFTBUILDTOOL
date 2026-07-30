@@ -6,6 +6,7 @@ from typing import Any
 from ..canonical import BuildDocument, BuildRegion, IntVector3
 from ..formats.litematic import bits_per_entry, pack_block_states
 from ..nbt import NBTWriter, Tag
+from ..voxel import iter_items_sorted
 from .nbt_utils import typed_compound
 
 _AIR_STATES = {"minecraft:air", "minecraft:cave_air", "minecraft:void_air"}
@@ -22,51 +23,61 @@ def _state_compound(state: str) -> dict[str, tuple[Tag, object]]:
     return {"Name": (Tag.STRING, name), "Properties": (Tag.COMPOUND, properties)}
 
 
-def _region_values(document: BuildDocument, region: BuildRegion) -> dict[IntVector3, int]:
-    if region.name in document.region_blocks:
-        values = {
-            position: palette_id
-            for position, palette_id in document.region_blocks[region.name].items()
-            if region.bounds.contains(position)
-        }
-        # Include changes that target this region and have no explicit membership yet.
-        # For overlapping regions, explicit per-region values win and the flattened field
-        # only fills previously empty coordinates.
-        for position, palette_id in document.blocks.items():
-            if region.bounds.contains(position) and position not in values:
-                values[position] = palette_id
-        return values
-    return {position: palette_id for position, palette_id in document.blocks.items() if region.bounds.contains(position)}
-
-
 def _region_compound(document: BuildDocument, region: BuildRegion) -> tuple[dict[str, tuple[Tag, Any]], int, int]:
     palette_by_id = document.palette_by_id()
-    region_values = _region_values(document, region)
+    explicit = document.region_blocks.get(region.name)
+    used_ids: set[int] = set()
+    if explicit is not None:
+        used_ids.update(
+            palette_id
+            for position, palette_id in iter_items_sorted(explicit)
+            if region.bounds.contains(position)
+        )
+    used_ids.update(
+        palette_id
+        for position, palette_id in iter_items_sorted(document.blocks)
+        if region.bounds.contains(position)
+        and (explicit is None or position not in explicit)
+    )
     used_states = {
         palette_by_id[palette_id].canonical_state
-        for palette_id in region_values.values()
+        for palette_id in used_ids
         if palette_id in palette_by_id
     }
     states = sorted(used_states - _AIR_STATES)
     states.insert(0, "minecraft:air")
     state_to_id = {state: index for index, state in enumerate(states)}
     dimensions = region.bounds.dimensions
-    values: list[int] = []
     non_air = 0
-    for y in range(dimensions.y):
-        for z in range(dimensions.z):
-            for x in range(dimensions.x):
-                position = IntVector3(region.bounds.min.x + x, region.bounds.min.y + y, region.bounds.min.z + z)
-                source_id = region_values.get(position)
-                state = palette_by_id[source_id].canonical_state if source_id is not None else "minecraft:air"
-                local_id = state_to_id.get(state)
-                if local_id is None:
-                    # This can only happen for an air-like variant; normalize all absent air
-                    # cells to minecraft:air while preserving non-air exact states.
-                    local_id = 0
-                values.append(local_id)
-                non_air += int(state not in _AIR_STATES)
-    words = pack_block_states(values, bits_per_entry(len(states)))
+
+    def values() -> Any:
+        nonlocal non_air
+        for y in range(dimensions.y):
+            for z in range(dimensions.z):
+                for x in range(dimensions.x):
+                    position = IntVector3(
+                        region.bounds.min.x + x,
+                        region.bounds.min.y + y,
+                        region.bounds.min.z + z,
+                    )
+                    source_id = explicit.get(position) if explicit is not None else None
+                    if source_id is None:
+                        source_id = document.blocks.get(position)
+                    state = (
+                        palette_by_id[source_id].canonical_state
+                        if source_id is not None
+                        else "minecraft:air"
+                    )
+                    local_id = state_to_id.get(state, 0)
+                    non_air += int(state not in _AIR_STATES)
+                    yield local_id
+
+    volume = dimensions.x * dimensions.y * dimensions.z
+    words = pack_block_states(
+        values(),
+        bits_per_entry(len(states)),
+        expected_count=volume,
+    )
 
     block_entities = []
     for item in document.block_entities:
@@ -130,7 +141,7 @@ def _region_compound(document: BuildDocument, region: BuildRegion) -> tuple[dict
         "PendingFluidTicks": (Tag.LIST, (Tag.COMPOUND, fluid_ticks)),
     }
     extensions = typed_compound(region.extension_data)
-    return {**extensions, **known}, non_air, dimensions.x * dimensions.y * dimensions.z
+    return {**extensions, **known}, non_air, volume
 
 
 def _fallback_region(document: BuildDocument) -> BuildRegion:

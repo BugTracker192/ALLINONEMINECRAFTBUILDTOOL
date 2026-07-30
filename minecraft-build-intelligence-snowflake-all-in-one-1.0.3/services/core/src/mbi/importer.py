@@ -27,6 +27,18 @@ def detect_format(root_name: str, root: dict[str, object], filename: str) -> str
 
 
 def import_build(data: bytes, filename: str = "upload.nbt", limits: NBTLimits | None = None) -> BuildDocument:
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".mca":
+        raise FormatError(
+            "ANVIL_WORLD_UNSUPPORTED",
+            "Anvil region/world saves are not supported; import a Sponge .schem, "
+            "Litematic .litematic, or legacy .schematic file.",
+            {
+                "filename": filename,
+                "supportedInputs": [".schem", ".litematic", ".schematic"],
+                "scopeDecision": "schematic-files-only",
+            },
+        )
     limits = limits or NBTLimits()
     compression, decompressed = decompress_nbt(data, limits)
     document = read_nbt(decompressed, limits)

@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ if _CORE_SOURCE.is_dir() and str(_CORE_SOURCE) not in sys.path:
     sys.path.insert(0, str(_CORE_SOURCE))
 
 from mbi.canonical import IntBoundingBox, IntVector3
+
+from app.config import RuntimeConfig
 from app.errors import AppError
 from app.project import load_document
 from app.render.perspective import PerspectiveCameraSpec, PerspectiveRenderer
@@ -189,6 +192,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=64,
         help="Spatial aggregation window edge in blocks (default: 64).",
+    )
+    command.add_argument(
+        "--classification-config",
+        help="JSON file overriding documented geometric classification thresholds.",
     )
     command = structure_sub.add_parser("name")
     command.add_argument("run")
@@ -377,7 +384,6 @@ def build_parser() -> argparse.ArgumentParser:
 def _perspective_render(args: argparse.Namespace) -> Any:
     from app.assets import open_resource_pack
 
-    document = load_document(args.run)
     crop = None
     if args.crop:
         values = [int(item) for item in args.crop.split(",")]
@@ -385,6 +391,7 @@ def _perspective_render(args: argparse.Namespace) -> Any:
             raise AppError("CROP_SPEC", "Crop must contain x,y,z,width,height,length.", exit_code=2)
         x, y, z, width, height, length = values
         crop = IntBoundingBox(IntVector3(x, y, z), IntVector3(x + width - 1, y + height - 1, z + length - 1))
+    document = load_document(args.run, bounds=crop)
     if args.camera_position is None:
         raise AppError("CAMERA_POSITION_REQUIRED", "Perspective rendering requires --camera-position X,Y,Z.", exit_code=30)
     target = args.camera_target
@@ -399,7 +406,19 @@ def _perspective_render(args: argparse.Namespace) -> Any:
     hidden = frozenset(IntVector3(*(int(round(value)) for value in point)) for point in (args.hide_coordinate or ()))
     pack = open_resource_pack(args.resource_pack)
     try:
-        result = PerspectiveRenderer(document, resource_pack=pack, strict_textures=args.strict_textures, seed=args.seed).render(
+        config = RuntimeConfig.from_environment()
+        if args.max_visible_blocks is not None:
+            config = replace(
+                config,
+                max_visible_blocks=args.max_visible_blocks,
+            )
+        result = PerspectiveRenderer(
+            document,
+            resource_pack=pack,
+            config=config,
+            strict_textures=args.strict_textures,
+            seed=args.seed,
+        ).render(
             args.out or args.run, camera=camera, crop=crop, size=args.size, mode=args.mode,
             lighting_preset=args.lighting, include_regions=tuple(args.region or ()),
             include_states=tuple(args.material or ()), exclude_states=tuple(args.hide_material or ()),
@@ -648,11 +667,17 @@ def dispatch(args: argparse.Namespace) -> Any:
         )
 
         if args.structure_command == "inventory":
+            classification_config = (
+                json.loads(Path(args.classification_config).read_text("utf-8"))
+                if args.classification_config
+                else None
+            )
             return inventory_structures(
                 args.run,
                 separation=args.separation,
                 minimum_blocks=args.minimum_blocks,
                 window_edge=args.window_edge,
+                classification_config=classification_config,
             )
         if args.structure_command == "name":
             return name_structure(args.run, args.identifier, args.name)

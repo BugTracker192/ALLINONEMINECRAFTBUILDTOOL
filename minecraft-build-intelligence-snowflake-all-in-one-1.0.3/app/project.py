@@ -1,22 +1,30 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 import shutil
 import struct
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from mbi.canonical import BuildDocument, IntBoundingBox, IntVector3
+from mbi.canonical_reader import read_canonical_payload
 from mbi.chunking import build_chunks
-from mbi.serialization import document_from_payload, document_to_payload
 from mbi.patch import BuildVersion, PatchEngine
 from mbi.patch.model import RegionLock
+from mbi.serialization import (
+    DEFERRED_BLOCK_ROWS,
+    document_from_payload,
+    document_to_payload,
+)
+from mbi.voxel import ChunkedVoxelMap, RegionOverlayVoxelMap, iter_items_sorted, voxel_maps_equal
 
 from .errors import AppError
 from .storage import atomic_write_bytes, atomic_write_json
-
 
 _CANONICAL_SCHEMA = "mbi.offline-run.v1"
 
@@ -32,6 +40,66 @@ def initialize_layout(root: Path) -> None:
         "ai/runs", "ai/tool_results", "export",
     ):
         (root / relative).mkdir(parents=True, exist_ok=True)
+
+
+def _write_block_rows(stream: Any, values: Any) -> None:
+    stream.write("[")
+    first = True
+    for position, palette_id in iter_items_sorted(values):
+        if not first:
+            stream.write(",")
+        first = False
+        stream.write(f"[{position.x},{position.y},{position.z},{palette_id}]")
+    stream.write("]")
+
+
+def write_document_json(
+    path: Path,
+    payload: dict[str, Any],
+    document: BuildDocument,
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            stream.write("{")
+            for index, key in enumerate(sorted(payload)):
+                if index:
+                    stream.write(",")
+                stream.write(json.dumps(key, ensure_ascii=False))
+                stream.write(":")
+                value = payload[key]
+                if value is DEFERRED_BLOCK_ROWS and key == "blocks":
+                    _write_block_rows(stream, document.blocks)
+                elif value is DEFERRED_BLOCK_ROWS and key == "regionBlocks":
+                    stream.write("{")
+                    for region_index, (name, values) in enumerate(
+                        sorted(document.region_blocks.items())
+                    ):
+                        if region_index:
+                            stream.write(",")
+                        stream.write(json.dumps(name, ensure_ascii=False))
+                        stream.write(":")
+                        _write_block_rows(stream, values)
+                    stream.write("}")
+                else:
+                    stream.write(
+                        json.dumps(
+                            value,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                            default=str,
+                        )
+                    )
+            stream.write("}\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temp_name)
+    return path
 
 
 def save_document(
@@ -63,14 +131,15 @@ def save_document(
         blob = b"MBICHUNK1" + struct.pack("<I", len(header_bytes)) + header_bytes + chunk.data
         atomic_write_bytes(root / "chunks" / f"{chunk.content_hash}.chunk", blob)
         chunk_rows.append(header)
+    del chunks
     atomic_write_json(root / "chunks" / "manifest.json", {"schema": "mbi.chunk-manifest.v1", "chunks": chunk_rows})
 
-    payload = document_to_payload(document)
+    payload = document_to_payload(document, defer_blocks=True)
     payload["offlineRunSchema"] = _CANONICAL_SCHEMA
     payload["chunkManifest"] = "chunks/manifest.json"
-    atomic_write_json(root / "canonical.json", payload)
+    canonical_path = write_document_json(root / "canonical.json", payload, document)
     version_id = active_version_id or "ver_" + document.content_hash[:20]
-    atomic_write_json(root / "versions" / f"{version_id}.json", payload)
+    shutil.copyfile(canonical_path, root / "versions" / f"{version_id}.json")
     manifest_path = root / "versions" / "manifest.json"
     manifest = {"schema": "mbi.version-manifest.v2", "active_version_id": version_id, "versions": []}
     if manifest_path.exists():
@@ -96,14 +165,87 @@ def save_document(
     return version_id
 
 
-def load_document(root: str | Path, *, version_id: str | None = None) -> BuildDocument:
+def load_document(
+    root: str | Path,
+    *,
+    version_id: str | None = None,
+    bounds: IntBoundingBox | None = None,
+) -> BuildDocument:
     root = Path(root)
     if version_id:
         path = root / "versions" / f"{version_id}.json"
     else:
         path = root / "canonical.json"
-    payload = json.loads(path.read_text("utf-8"))
-    return document_from_payload(payload)
+    payload, blocks, region_blocks = read_canonical_payload(path)
+    if region_blocks:
+        if len(region_blocks) == 1:
+            sole = next(iter(region_blocks.values()))
+            if voxel_maps_equal(blocks, sole):
+                blocks = sole
+        elif payload.get("regions"):
+            order = sorted(region_blocks)
+            overlay = RegionOverlayVoxelMap(region_blocks, order=order)
+            if voxel_maps_equal(blocks, overlay):
+                blocks = overlay
+    document = document_from_payload(
+        payload,
+        blocks=blocks,
+        region_blocks=region_blocks,
+    )
+    if bounds is not None:
+        intersection = document.bounds.intersection(bounds)
+        if intersection is None:
+            raise AppError(
+                "EMPTY_SCOPE",
+                "The requested bounds do not intersect the document.",
+                exit_code=2,
+            )
+        scoped_blocks = ChunkedVoxelMap()
+        for point, palette_id in iter_items_sorted(document.blocks):
+            if intersection.contains(point):
+                scoped_blocks[point] = palette_id
+        document.blocks = scoped_blocks
+        scoped_regions: dict[str, ChunkedVoxelMap] = {}
+        for name, values in document.region_blocks.items():
+            scoped_values = ChunkedVoxelMap()
+            for point, palette_id in iter_items_sorted(values):
+                if intersection.contains(point):
+                    scoped_values[point] = palette_id
+            scoped_regions[name] = scoped_values
+        document.region_blocks = scoped_regions
+        document.region_blocks = {
+            name: values
+            for name, values in document.region_blocks.items()
+            if values
+        }
+        document.bounds = intersection
+        document.origin = intersection.min
+        document.block_entities = [
+            item for item in document.block_entities if intersection.contains(item.position)
+        ]
+        document.entities = [
+            item
+            for item in document.entities
+            if item.position is None
+            or intersection.contains(
+                IntVector3(
+                    int(item.position[0]),
+                    int(item.position[1]),
+                    int(item.position[2]),
+                )
+            )
+        ]
+        document.metadata = {
+            **document.metadata,
+            "scope": {
+                "type": "bounds",
+                "min": intersection.min.as_tuple(),
+                "max": intersection.max.as_tuple(),
+                "parent_content_hash": payload.get("contentHash"),
+            },
+        }
+        document.content_hash = document.compute_content_hash()
+    return document
 
 
 

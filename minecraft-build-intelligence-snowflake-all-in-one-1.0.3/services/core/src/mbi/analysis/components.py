@@ -26,8 +26,9 @@ def connected_components(document: BuildDocument) -> list[Component]:
     solid = {position for position, pid in document.blocks.items() if not palette[pid].is_air_like}
     unseen = set(solid)
     result: list[Component] = []
-    while unseen:
-        start = min(unseen)
+    for start in sorted(unseen):
+        if start not in unseen:
+            continue
         unseen.remove(start)
         queue = deque([start])
         points: list[IntVector3] = []

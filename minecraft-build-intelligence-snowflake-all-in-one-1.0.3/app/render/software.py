@@ -4,16 +4,16 @@ import hashlib
 import json
 import math
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from collections.abc import Mapping
 from typing import Any, Iterable
 
 import numpy as np
-from PIL import Image
-
 from mbi.canonical import BuildDocument, IntBoundingBox, IntVector3, PaletteEntry
 from mbi.snapshot.raster import palette_color
+from mbi.voxel import iter_items_sorted
+from PIL import Image
 
 from app.assets import ModelInstance, ResolvedModel, ResourcePackSource, open_resource_pack
 from app.config import RuntimeConfig
@@ -283,15 +283,47 @@ class SoftwareRenderer:
     ) -> None:
         self.document = document
         self.pack = resource_pack
-        self.config = config or RuntimeConfig()
+        self.config = config or RuntimeConfig.from_environment()
         self.strict_textures = strict_textures
         self.seed = seed
         self._texture_arrays: dict[tuple[str, str], np.ndarray] = {}
-        self._model_cache: dict[tuple[str, tuple[int, int, int]], list[tuple[list[Quad], dict[str, str], bool]]] = {}
-        self._entity_model_diagnostics: dict[tuple[str, tuple[int, int, int]], dict[str, Any]] = {}
+        self._model_cache: dict[
+            tuple[str, tuple[int, int, int] | None],
+            list[tuple[list[Quad], dict[str, str], bool]],
+        ] = {}
+        self._entity_model_diagnostics: dict[
+            tuple[str, tuple[int, int, int] | None],
+            dict[str, Any],
+        ] = {}
         self._palette = document.palette_by_id()
         self._region_names, self._regions = _region_ids(document)
         self._block_entities = {entity.position: entity for entity in document.block_entities}
+
+    def _store_texture(
+        self,
+        key: tuple[str, str],
+        value: np.ndarray,
+    ) -> None:
+        if (
+            key not in self._texture_arrays
+            and len(self._texture_arrays) >= self.config.texture_cache_items
+        ):
+            self._texture_arrays.pop(next(iter(self._texture_arrays)))
+        self._texture_arrays[key] = value
+
+    def _store_model(
+        self,
+        key: tuple[str, tuple[int, int, int] | None],
+        value: list[tuple[list[Quad], dict[str, str], bool]],
+    ) -> None:
+        if (
+            key not in self._model_cache
+            and len(self._model_cache) >= self.config.model_cache_items
+        ):
+            oldest = next(iter(self._model_cache))
+            self._model_cache.pop(oldest)
+            self._entity_model_diagnostics.pop(oldest, None)
+        self._model_cache[key] = value
 
     @staticmethod
     def _tint_entity_layer(image: np.ndarray, color: tuple[int, int, int]) -> np.ndarray:
@@ -352,7 +384,7 @@ class SoftwareRenderer:
             + json.dumps(raw_patterns, sort_keys=True, default=str).encode("utf-8")
         ).hexdigest()[:20]
         resource = f"generated/entity/banner/{digest}"
-        self._texture_arrays[("minecraft", resource)] = composed
+        self._store_texture(("minecraft", resource), composed)
         return resource, tuple(applied)
 
     def _entity_model(
@@ -478,7 +510,7 @@ class SoftwareRenderer:
                 return self._texture_arrays[key]
             image = self.pack.texture(ns, path)
             array = np.asarray(image, dtype=np.uint8)
-            self._texture_arrays[key] = array
+            self._store_texture(key, array)
             return array
         except Exception as exc:
             if self.strict_textures:
@@ -490,7 +522,14 @@ class SoftwareRenderer:
             return _MISSING_TEXTURE
 
     def _block_models(self, entry: PaletteEntry, position: IntVector3, diagnostics: RenderDiagnostics) -> list[tuple[list[Quad], dict[str, str], bool]]:
-        cache_key = (entry.canonical_state, position.as_tuple())
+        # No-pack fallback geometry is coordinate-independent. Sharing it by
+        # state prevents a multi-million-coordinate cache. Resource-pack model
+        # selection may be seeded by position, so that cache remains
+        # coordinate-aware but is strictly bounded by RuntimeConfig.
+        cache_key = (
+            entry.canonical_state,
+            position.as_tuple() if self.pack is not None else None,
+        )
         if cache_key in self._model_cache:
             entity_diagnostic = self._entity_model_diagnostics.get(cache_key)
             if entity_diagnostic is not None:
@@ -498,7 +537,7 @@ class SoftwareRenderer:
             return self._model_cache[cache_key]
         if self.pack is None:
             result = [(fallback_cube(), {}, True)]
-            self._model_cache[cache_key] = result
+            self._store_model(cache_key, result)
             return result
         result: list[tuple[list[Quad], dict[str, str], bool]] = []
         if entry.is_fluid:
@@ -522,7 +561,7 @@ class SoftwareRenderer:
                 ("builtin:fluid",),
             )
             result = [(model_quads(fluid_model, ModelInstance("builtin:fluid")), fluid_model.textures, False)]
-            self._model_cache[cache_key] = result
+            self._store_model(cache_key, result)
             return result
         try:
             instances = self.pack.select_models(entry.canonical_state, position.as_tuple(), self.seed)
@@ -550,6 +589,37 @@ class SoftwareRenderer:
                     result.append((entity_quads, entity_model.textures, False))
                     continue
                 result.append((quads, model.textures, False))
+            if entry.properties.get("waterlogged") == "true":
+                fluid_model = ResolvedModel(
+                    ({
+                        "from": [0, 0, 0],
+                        "to": [16, 15.5, 16],
+                        "faces": {
+                            "up": {"texture": "#still"},
+                            "down": {"texture": "#still"},
+                            "north": {"texture": "#flow"},
+                            "south": {"texture": "#flow"},
+                            "west": {"texture": "#flow"},
+                            "east": {"texture": "#flow"},
+                        },
+                    },),
+                    {
+                        "still": "minecraft:block/water_still",
+                        "flow": "minecraft:block/water_flow",
+                    },
+                    False,
+                    ("builtin:fluid-overlay",),
+                )
+                result.append(
+                    (
+                        model_quads(
+                            fluid_model,
+                            ModelInstance("builtin:fluid-overlay"),
+                        ),
+                        fluid_model.textures,
+                        False,
+                    )
+                )
         except Exception as exc:
             if self.strict_textures:
                 if isinstance(exc, AppError):
@@ -576,7 +646,7 @@ class SoftwareRenderer:
                 diagnostics.unsupported_models.append(item)
                 diagnostics.fallbacks.append({"type": "model_fallback", **item})
             result = [(fallback_cube(), {}, True)]
-        self._model_cache[cache_key] = result
+        self._store_model(cache_key, result)
         return result
 
     def _triangles(
@@ -589,6 +659,8 @@ class SoftwareRenderer:
         include_regions: frozenset[str],
         include_states: frozenset[str],
         exclude_states: frozenset[str],
+        viewport: tuple[int, int, int, int] | None = None,
+        block_limit: int | None = None,
     ) -> tuple[list[_Triangle], list[_Triangle]]:
         opaque: list[_Triangle] = []
         translucent: list[_Triangle] = []
@@ -610,8 +682,24 @@ class SoftwareRenderer:
                 else:
                     region = next(item for item in self.document.regions if item.name == name)
                     region_positions.update(position for position in self.document.blocks if region.bounds.contains(position))
-        visible_blocks = []
-        for position, pid in sorted(self.document.blocks.items()):
+        considered_count = 0
+        visible_count = 0
+        cube = np.asarray(
+            [
+                (0, 0, 0),
+                (0, 0, 1),
+                (0, 1, 0),
+                (0, 1, 1),
+                (1, 0, 0),
+                (1, 0, 1),
+                (1, 1, 0),
+                (1, 1, 1),
+            ],
+            dtype=np.float64,
+        )
+        for block_index, (position, pid) in enumerate(
+            iter_items_sorted(self.document.blocks)
+        ):
             if not bounds.contains(position):
                 continue
             if region_positions is not None and position not in region_positions:
@@ -621,16 +709,21 @@ class SoftwareRenderer:
                 continue
             if exclude_states and _state_matches(entry, exclude_states):
                 continue
-            visible_blocks.append((position, pid))
-        diagnostics.blocks_considered = len(visible_blocks)
-        if len(visible_blocks) > self.config.max_visible_blocks:
-            raise AppError(
-                "RENDER_BLOCK_LIMIT",
-                "Render exceeds configured visible-block limit.",
-                {"actual": len(visible_blocks), "limit": self.config.max_visible_blocks},
-                30,
-            )
-        for block_index, (position, palette_id) in enumerate(visible_blocks):
+            if viewport is not None:
+                screen_bounds, _ = transform.project(
+                    cube
+                    + np.asarray(position.as_tuple(), dtype=np.float64)[None, :]
+                )
+                x0, y0, x1, y1 = viewport
+                if (
+                    float(screen_bounds[:, 0].max()) < x0
+                    or float(screen_bounds[:, 1].max()) < y0
+                    or float(screen_bounds[:, 0].min()) >= x1
+                    or float(screen_bounds[:, 1].min()) >= y1
+                ):
+                    continue
+            considered_count += 1
+            palette_id = pid
             entry = self._palette[palette_id]
             if entry.is_air_like:
                 continue
@@ -687,7 +780,26 @@ class SoftwareRenderer:
                     emitted_for_block += 1
                     diagnostics.faces_emitted += 1
             if emitted_for_block:
+                visible_count += 1
                 diagnostics.blocks_visible += 1
+                effective_limit = (
+                    self.config.max_visible_blocks
+                    if block_limit is None
+                    else block_limit
+                )
+                if effective_limit > 0 and visible_count > effective_limit:
+                    raise AppError(
+                        "RENDER_BLOCK_LIMIT",
+                        "Render tile exceeds configured visible-block limit.",
+                        {
+                            "actualAtLeast": visible_count,
+                            "limit": effective_limit,
+                            "scope": "tile" if viewport is not None else "frame",
+                            "viewport": viewport,
+                        },
+                        30,
+                    )
+        diagnostics.blocks_considered += considered_count
         opaque.sort(key=lambda item: item.stable_key)
         translucent.sort(key=lambda item: (-float(item.depth.mean()), item.stable_key))
         diagnostics.peak_estimated_working_memory = (
@@ -1020,6 +1132,23 @@ class SoftwareRenderer:
                 {"tile_size": tile_size},
                 2,
             )
+        tile_count = (
+            math.ceil(width / tile_size)
+            * math.ceil(height / tile_size)
+        )
+        total_tile_work = width * height * tile_count
+        if total_tile_work > self.config.max_total_tile_work:
+            raise AppError(
+                "RENDER_TOTAL_TILE_WORK_LIMIT",
+                "Render exceeds the configured total pixel-by-tile safety ceiling.",
+                {
+                    "actual": total_tile_work,
+                    "limit": self.config.max_total_tile_work,
+                    "resolution": [width, height],
+                    "tile_count": tile_count,
+                },
+                30,
+            )
 
         bounds = _crop_document_bounds(self.document, crop)
         camera = camera or CameraSpec()
@@ -1117,20 +1246,6 @@ class SoftwareRenderer:
         if not use_textures:
             self.pack = None
             self._model_cache.clear()
-        try:
-            opaque, translucent = self._triangles(
-                transform,
-                bounds,
-                diagnostics,
-                changed_coordinates,
-                issue_coordinates,
-                include_regions_set,
-                include_states_set,
-                exclude_states_set,
-            )
-        finally:
-            self.pack = original_pack
-
         array_specs: dict[str, tuple[np.dtype[Any], tuple[int, ...], Any]] = {
             "palette": (np.dtype("<u4"), (height, width), NO_PALETTE),
             "coordinate": (
@@ -1172,10 +1287,18 @@ class SoftwareRenderer:
         palette_image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         completed_tiles = 0
         resumed_tiles = 0
-        tile_count = (
-            math.ceil(width / tile_size)
-            * math.ceil(height / tile_size)
+        peak_triangle_count = 0
+        scene_visible_blocks = sum(
+            1
+            for point, palette_id in iter_items_sorted(self.document.blocks)
+            if bounds.contains(point)
+            and not self._palette[palette_id].is_air_like
         )
+        if scene_visible_blocks > self.config.max_visible_blocks:
+            diagnostics.limitations.append(
+                "Scene visible-block count exceeds the per-tile budget; "
+                "screen-space tiling is enforcing the budget independently."
+            )
         for y0 in range(0, height, tile_size):
             y1 = min(height, y0 + tile_size)
             for x0 in range(0, width, tile_size):
@@ -1206,6 +1329,26 @@ class SoftwareRenderer:
                     )
                     resumed_tiles += 1
                 else:
+                    self.pack = original_pack if use_textures else None
+                    try:
+                        opaque, translucent = self._triangles(
+                            transform,
+                            bounds,
+                            diagnostics,
+                            changed_coordinates,
+                            issue_coordinates,
+                            include_regions_set,
+                            include_states_set,
+                            exclude_states_set,
+                            viewport=(x0, y0, x1, y1),
+                            block_limit=self.config.max_visible_blocks,
+                        )
+                    finally:
+                        self.pack = original_pack
+                    peak_triangle_count = max(
+                        peak_triangle_count,
+                        len(opaque) + len(translucent),
+                    )
                     tile_width = x1 - x0
                     tile_height = y1 - y0
                     color = np.empty(
@@ -1288,6 +1431,9 @@ class SoftwareRenderer:
                         },
                     )
                     final_image.paste(tile_image, (x0, y0))
+                    del opaque, translucent, color, zbuffer, semantics
+                    self._model_cache.clear()
+                    self._entity_model_diagnostics.clear()
                 palette_values = np.asarray(
                     mapped["palette"][y0:y1, x0:x1]
                 )
@@ -1352,7 +1498,7 @@ class SoftwareRenderer:
         )
         diagnostics.peak_estimated_working_memory = (
             tile_size * tile_size * (4 + 4 + 12 + 4 + 3 + 2 + 1 + 1)
-            + (len(opaque) + len(translucent)) * 640
+            + peak_triangle_count * 640
             + width * height * 8
         )
         diagnostics.limitations.append(
@@ -1409,6 +1555,13 @@ class SoftwareRenderer:
                 "resumed_tiles": resumed_tiles,
                 "checkpoint_directory": str(checkpoint_root),
                 "exact_screen_space": True,
+                "scene_visible_blocks": scene_visible_blocks,
+                "per_tile_visible_block_limit": self.config.max_visible_blocks,
+                "scene_limit_advisory": (
+                    scene_visible_blocks > self.config.max_visible_blocks
+                ),
+                "total_pixel_tile_work": total_tile_work,
+                "total_pixel_tile_work_limit": self.config.max_total_tile_work,
             },
             "diagnostics": persisted_diagnostics,
         }
@@ -1420,6 +1573,273 @@ class SoftwareRenderer:
             snapshot_id,
             manifest,
             asdict(diagnostics),
+        )
+
+    def render_lod(
+        self,
+        output_root: str | Path,
+        *,
+        camera: CameraSpec | None = None,
+        crop: IntBoundingBox | None = None,
+        size: tuple[int, int] = (4096, 4096),
+        background: tuple[int, int, int, int] = (0, 0, 0, 0),
+        include_regions: Iterable[str] = (),
+        include_states: Iterable[str] = (),
+        exclude_states: Iterable[str] = (),
+        name: str | None = None,
+        resume: bool = False,
+        **_: Any,
+    ) -> RenderResult:
+        """Render a bounded-memory one-sample-per-output-pixel overview.
+
+        This is intentionally non-exact. It projects block centers, keeps the
+        nearest sample per pixel, and records that LOD contract in the manifest.
+        """
+        started = time.perf_counter()
+        width, height = size
+        if (
+            width < 1
+            or height < 1
+            or width > self.config.max_render_size
+            or height > self.config.max_render_size
+        ):
+            raise AppError(
+                "RENDER_SIZE_LIMIT",
+                "Render size is outside configured bounds.",
+                {"size": size},
+                30,
+            )
+        bounds = _crop_document_bounds(self.document, crop)
+        camera = camera or CameraSpec()
+        transform = camera_transform(bounds, size, camera)
+        include_regions_set = frozenset(str(item) for item in include_regions)
+        include_states_set = frozenset(str(item) for item in include_states)
+        exclude_states_set = frozenset(str(item) for item in exclude_states)
+        config_payload = {
+            "build_hash": self.document.content_hash,
+            "camera": asdict(camera),
+            "bounds": {
+                "min": bounds.min.as_tuple(),
+                "max": bounds.max.as_tuple(),
+            },
+            "size": size,
+            "filters": {
+                "regions": sorted(include_regions_set),
+                "include_states": sorted(include_states_set),
+                "exclude_states": sorted(exclude_states_set),
+            },
+            "renderer": "python-cpu-lod-center-sampler-v1",
+        }
+        snapshot_id = "snap_" + hashlib.sha256(
+            json.dumps(
+                config_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()[:24]
+        root = Path(output_root)
+        snapshots = root / "snapshots"
+        semantic_root = root / "semantic_maps"
+        snapshots.mkdir(parents=True, exist_ok=True)
+        semantic_root.mkdir(parents=True, exist_ok=True)
+        stem = name or snapshot_id
+        png_path = snapshots / f"{stem}.png"
+        manifest_path = snapshots / f"{stem}.manifest.json"
+        metadata_path = semantic_root / f"{snapshot_id}.metadata.json"
+        if resume and png_path.is_file() and manifest_path.is_file() and metadata_path.is_file():
+            manifest = json.loads(manifest_path.read_text("utf-8"))
+            diagnostics = dict(manifest.get("diagnostics", {}))
+            diagnostics["duration_seconds"] = round(time.perf_counter() - started, 6)
+            return RenderResult(
+                png_path,
+                manifest_path,
+                metadata_path,
+                snapshot_id,
+                manifest,
+                diagnostics,
+            )
+
+        array_specs: dict[str, tuple[np.dtype[Any], tuple[int, ...], Any]] = {
+            "palette": (np.dtype("<u4"), (height, width), NO_PALETTE),
+            "coordinate": (
+                np.dtype("<i4"),
+                (height, width, 3),
+                NO_COORDINATE,
+            ),
+            "depth": (np.dtype("<f4"), (height, width), np.inf),
+            "normal": (np.dtype("i1"), (height, width, 3), 0),
+            "region": (
+                np.dtype("<u2"),
+                (height, width),
+                np.iinfo(np.uint16).max,
+            ),
+            "occupancy": (np.dtype("u1"), (height, width), 0),
+            "changed": (np.dtype("u1"), (height, width), 0),
+            "issue": (np.dtype("u1"), (height, width), 0),
+        }
+        mapped: dict[str, np.memmap[Any, Any]] = {}
+        for map_name, (dtype, shape, fill_value) in array_specs.items():
+            mapped_array = np.memmap(
+                semantic_root / f"{snapshot_id}.{map_name}.bin",
+                dtype=dtype,
+                mode="w+",
+                shape=shape,
+                order="C",
+            )
+            mapped_array[...] = fill_value
+            mapped_array.flush()
+            mapped[map_name] = mapped_array
+
+        region_positions: set[IntVector3] | None = None
+        if include_regions_set:
+            region_positions = set()
+            for region_name in sorted(include_regions_set):
+                values = self.document.region_blocks.get(region_name)
+                if values is None:
+                    raise AppError(
+                        "RENDER_REGION_NOT_FOUND",
+                        "Requested render region does not exist.",
+                        {"region": region_name},
+                        30,
+                    )
+                region_positions.update(values)
+        considered = accepted = replacements = 0
+        for point, palette_id in iter_items_sorted(self.document.blocks):
+            if not bounds.contains(point):
+                continue
+            if region_positions is not None and point not in region_positions:
+                continue
+            entry = self._palette[palette_id]
+            if entry.is_air_like:
+                continue
+            if include_states_set and not _state_matches(entry, include_states_set):
+                continue
+            if exclude_states_set and _state_matches(entry, exclude_states_set):
+                continue
+            considered += 1
+            screen, depths = transform.project(
+                np.asarray(
+                    [[point.x + 0.5, point.y + 0.5, point.z + 0.5]],
+                    dtype=np.float64,
+                )
+            )
+            px = int(round(float(screen[0, 0])))
+            py = int(round(float(screen[0, 1])))
+            if not (0 <= px < width and 0 <= py < height):
+                continue
+            depth = float(depths[0])
+            if depth >= float(mapped["depth"][py, px]):
+                continue
+            replacements += int(mapped["occupancy"][py, px] != 0)
+            mapped["palette"][py, px] = palette_id
+            mapped["coordinate"][py, px] = point.as_tuple()
+            mapped["depth"][py, px] = depth
+            mapped["region"][py, px] = self._regions.get(
+                point,
+                np.iinfo(np.uint16).max,
+            )
+            mapped["occupancy"][py, px] = 1
+            accepted += 1
+        for mapped_array in mapped.values():
+            mapped_array.flush()
+
+        palette_values = np.asarray(mapped["palette"])
+        image = np.empty((height, width, 4), dtype=np.uint8)
+        image[...] = background
+        occupied = palette_values != NO_PALETTE
+        for palette_id in np.unique(palette_values[occupied]):
+            image[palette_values == palette_id] = palette_color(int(palette_id))
+        Image.fromarray(image, "RGBA").save(
+            png_path,
+            format="PNG",
+            compress_level=9,
+            optimize=False,
+        )
+        palette_png = f"{snapshot_id}.palette.png"
+        Image.fromarray(image, "RGBA").save(
+            semantic_root / palette_png,
+            format="PNG",
+            compress_level=9,
+            optimize=False,
+        )
+        semantic_metadata = {
+            "schema": "mbi.semantic-maps.v1",
+            "storage": "disk-backed-lod",
+            "arrays": {
+                map_name: {
+                    "path": f"{snapshot_id}.{map_name}.bin",
+                    "dtype": dtype.str,
+                    "shape": list(shape),
+                    "order": "C",
+                    "endianness": "little",
+                }
+                for map_name, (dtype, shape, _) in array_specs.items()
+            },
+        }
+        atomic_write_json(metadata_path, semantic_metadata)
+        maps = {
+            map_name: f"../semantic_maps/{snapshot_id}.{map_name}.bin"
+            for map_name in array_specs
+        }
+        maps["palette_png"] = f"../semantic_maps/{palette_png}"
+        maps["metadata"] = f"../semantic_maps/{metadata_path.name}"
+        diagnostics = {
+            "render_mode": "software-lod-flat",
+            "render_tier": -1,
+            "blocks_considered": considered,
+            "samples_accepted": accepted,
+            "samples_replaced_by_nearer_block": replacements,
+            "duration_seconds": round(time.perf_counter() - started, 6),
+            "peak_estimated_working_memory": (
+                width * height * 4
+                + max(dtype.itemsize * int(np.prod(shape)) for dtype, shape, _ in array_specs.values())
+            ),
+            "limitations": [
+                "Non-exact LOD: block centers are merged to the nearest sample per output pixel.",
+                "Textures, model silhouettes, translucent blending, and sub-pixel blocks are not exact.",
+            ],
+        }
+        persisted_diagnostics = dict(diagnostics)
+        persisted_diagnostics.pop("duration_seconds", None)
+        manifest = {
+            "snapshot_id": snapshot_id,
+            "build_version_id": "ver_" + self.document.content_hash[:20],
+            "type": "orthographic-lod",
+            "resolution": [width, height],
+            "coordinate_space": "document",
+            "visible_bounds": {
+                "min": list(bounds.min.as_tuple()),
+                "max": list(bounds.max.as_tuple()),
+            },
+            "camera": asdict(camera),
+            "renderer_version": "python-cpu-lod-center-sampler-v1",
+            "background": list(background),
+            "content_hash": hashlib.sha256(png_path.read_bytes()).hexdigest(),
+            "semantic_maps": maps,
+            "filters": config_payload["filters"],
+            "accuracy": {
+                "profile": "lod",
+                "exact": False,
+                "texture_exact": False,
+                "model_shape_exact": False,
+                "contract": "nearest-block-center sample per output pixel",
+            },
+            "lod": {
+                "enabled": True,
+                "method": "nearest-depth-block-center-per-pixel-v1",
+                "source_block_count": considered,
+                "accepted_sample_count": accepted,
+            },
+            "diagnostics": persisted_diagnostics,
+        }
+        atomic_write_json(manifest_path, manifest)
+        return RenderResult(
+            png_path,
+            manifest_path,
+            metadata_path,
+            snapshot_id,
+            manifest,
+            diagnostics,
         )
 
     def render_slice(

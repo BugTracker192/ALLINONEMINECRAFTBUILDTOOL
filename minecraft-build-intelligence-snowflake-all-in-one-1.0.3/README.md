@@ -125,7 +125,10 @@ The reusable Python API exposes `app.render.render(...)`, `pixel_to_block(...)`,
 
 ## Quality and map-maker toolkit
 
-Version 1.1.0 adds whole-volume comprehension, scoped/structure analysis,
+Version 1.2.0 includes the 1.1.0 whole-volume comprehension surface and adds
+chunk-array large-schematic processing, streamed persistence/export, scoped
+structure work, exact tile-local rendering, honest LOD, renderer-backed fluid
+coverage and verification-on export. It also retains scoped/structure analysis,
 quality gates, map-scale reporting, and reference-style authoring:
 
 ```bash
@@ -165,6 +168,19 @@ python -m app.cli quality-report ./run --structure great_hall --fail-under 70
 python -m app.cli quality-report ./run \
   --from VERSION_A --to VERSION_B
 ```
+
+For large scenes, exact rendering auto-tiles above the per-tile emitted-geometry
+budget; use `--tile-size 512 --resume`. `--accuracy fast` selects the bounded
+LOD overview and is explicitly non-exact in its manifest. Limits can be
+configured with `MBI_MAX_VISIBLE_BLOCKS`, `MBI_MAX_RENDER_SIZE` and
+`MBI_MAX_TOTAL_TILE_WORK`.
+
+The tested chunk-array budget stores 16,777,216 placed voxels in 64 MiB of
+voxel arrays. Default parser guards are 100,000,000 volume cells and 65,536
+palette states; actual peak memory additionally includes input NBT, palettes,
+entities, analyses, assets and outputs. Anvil world saves are not supported.
+See `TREE_OF_DREAMS_IMPLEMENTATION_TRACEABILITY.md` and the normative
+`docs/agent/LARGE_SCHEMATIC_AUTONOMOUS_APPENDIX.md`.
 
 `analyze --structure` automatically enables conservative structure-envelope
 sealing. For caller-supplied bounds, opt in with

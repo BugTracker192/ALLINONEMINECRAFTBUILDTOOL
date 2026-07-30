@@ -19,10 +19,18 @@ from .canonical import (
     PaletteEntry,
 )
 from .errors import MBIError
+from .voxel import ChunkedVoxelMap, iter_items_sorted
 
 _SERIALIZATION_SCHEMA = "mbi.build-document.v2"
 _COMPATIBLE_SCHEMAS = {_SERIALIZATION_SCHEMA, "mbi.build-document.v1"}
 _DEFAULT_MAX_DECOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
+
+
+class _DeferredBlockRows:
+    pass
+
+
+DEFERRED_BLOCK_ROWS = _DeferredBlockRows()
 
 
 def _encode_value(value: Any) -> Any:
@@ -68,13 +76,16 @@ def _vec(value: list[int] | tuple[int, int, int]) -> IntVector3:
 
 
 def _block_rows(values: dict[IntVector3, int]) -> list[list[int]]:
-    return [[position.x, position.y, position.z, palette_id] for position, palette_id in sorted(values.items())]
+    return [
+        [position.x, position.y, position.z, palette_id]
+        for position, palette_id in iter_items_sorted(values)
+    ]
 
 
 def _read_block_rows(rows: Any) -> dict[IntVector3, int]:
     if not isinstance(rows, list):
         raise MBIError("DOCUMENT_BLOCK_INVALID", "Stored document block rows must be a list.")
-    blocks: dict[IntVector3, int] = {}
+    blocks = ChunkedVoxelMap()
     for row in rows:
         if not isinstance(row, list) or len(row) != 4 or not all(isinstance(item, int) for item in row):
             raise MBIError("DOCUMENT_BLOCK_INVALID", "Stored document contains an invalid block record.")
@@ -82,7 +93,11 @@ def _read_block_rows(rows: Any) -> dict[IntVector3, int]:
     return blocks
 
 
-def document_to_payload(document: BuildDocument) -> dict[str, Any]:
+def document_to_payload(
+    document: BuildDocument,
+    *,
+    defer_blocks: bool = False,
+) -> dict[str, Any]:
     return {
         "serializationSchema": _SERIALIZATION_SCHEMA,
         "schemaVersion": document.schema_version,
@@ -128,8 +143,15 @@ def document_to_payload(document: BuildDocument) -> dict[str, Any]:
             }
             for region in document.regions
         ],
-        "blocks": _block_rows(document.blocks),
-        "regionBlocks": {name: _block_rows(values) for name, values in sorted(document.region_blocks.items())},
+        "blocks": DEFERRED_BLOCK_ROWS if defer_blocks else _block_rows(document.blocks),
+        "regionBlocks": (
+            DEFERRED_BLOCK_ROWS
+            if defer_blocks
+            else {
+                name: _block_rows(values)
+                for name, values in sorted(document.region_blocks.items())
+            }
+        ),
         "blockEntities": [
             {
                 "position": list(item.position.as_tuple()),
@@ -159,7 +181,12 @@ def document_to_payload(document: BuildDocument) -> dict[str, Any]:
     }
 
 
-def document_from_payload(payload: dict[str, Any]) -> BuildDocument:
+def document_from_payload(
+    payload: dict[str, Any],
+    *,
+    blocks: Any = None,
+    region_blocks: Any = None,
+) -> BuildDocument:
     schema = payload.get("serializationSchema")
     if schema not in _COMPATIBLE_SCHEMAS:
         raise MBIError(
@@ -198,11 +225,19 @@ def document_from_payload(payload: dict[str, Any]) -> BuildDocument:
             )
             for item in payload["regions"]
         ]
-        blocks = _read_block_rows(payload["blocks"])
-        region_blocks_raw = payload.get("regionBlocks", {})
-        if not isinstance(region_blocks_raw, dict):
-            raise MBIError("DOCUMENT_REGION_BLOCKS_INVALID", "Stored document regionBlocks must be an object.")
-        region_blocks = {str(name): _read_block_rows(rows) for name, rows in region_blocks_raw.items()}
+        parsed_blocks = (
+            blocks if blocks is not None else _read_block_rows(payload["blocks"])
+        )
+        if region_blocks is None:
+            region_blocks_raw = payload.get("regionBlocks", {})
+            if not isinstance(region_blocks_raw, dict):
+                raise MBIError("DOCUMENT_REGION_BLOCKS_INVALID", "Stored document regionBlocks must be an object.")
+            parsed_region_blocks = {
+                str(name): _read_block_rows(rows)
+                for name, rows in region_blocks_raw.items()
+            }
+        else:
+            parsed_region_blocks = region_blocks
         block_entities = [
             CanonicalBlockEntity(
                 _vec(item["position"]),
@@ -243,8 +278,8 @@ def document_from_payload(payload: dict[str, Any]) -> BuildDocument:
             origin=_vec(payload["origin"]),
             palette=palette,
             regions=regions,
-            blocks=blocks,
-            region_blocks=region_blocks,
+            blocks=parsed_blocks,
+            region_blocks=parsed_region_blocks,
             block_entities=block_entities,
             entities=entities,
             pending_block_ticks=_decode_value(payload.get("pendingBlockTicks", [])),

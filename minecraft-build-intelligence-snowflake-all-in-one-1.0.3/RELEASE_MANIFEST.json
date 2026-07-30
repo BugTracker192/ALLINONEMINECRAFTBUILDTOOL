@@ -6,6 +6,6 @@
   "bundled_asset_sha256": "f99aefac7040f85c67b509ebc63a56e542d5f250fd51040d6a3bd7f97e6e5bbc",
   "bundled_asset_size_bytes": 411443953,
   "profile": "private-snowflake-coco-all-in-one",
-  "test_count": 106,
-  "version": "1.1.0"
+  "test_count": 129,
+  "version": "1.2.0"
 }

@@ -14,9 +14,13 @@ class NBTLimits:
     max_list_length: int = 10_000_000
     max_array_length: int = 1_000_000_000
     max_string_bytes: int = 1_048_576
-    max_palette_size: int = 1_000_000
+    # These defaults are deliberately aligned with the tested schematic
+    # envelope.  They are guardrails, not claims that every accepted input
+    # will fit on every machine; the operating manual provides the measured
+    # placed-block/RAM budgets for each command.
+    max_palette_size: int = 65_536
     max_dimension: int = 65_535
-    max_volume: int = 1_000_000_000
+    max_volume: int = 100_000_000
     max_regions: int = 10_000
     max_block_entities: int = 10_000_000
     max_entities: int = 10_000_000

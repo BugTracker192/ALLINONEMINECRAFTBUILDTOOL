@@ -2,11 +2,29 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..canonical import BuildDocument, BuildRegion, CanonicalBlockEntity, CanonicalEntity, ImportDiagnostic, IntBoundingBox, IntVector3, PaletteEntry
+from ..canonical import (
+    BuildDocument,
+    BuildRegion,
+    CanonicalBlockEntity,
+    CanonicalEntity,
+    ImportDiagnostic,
+    IntBoundingBox,
+    IntVector3,
+    PaletteEntry,
+)
 from ..compression import Compression
 from ..errors import FormatError
 from ..limits import NBTLimits, checked_volume
-from .common import build_id_from_hash, ensure_air_palette, int_value, require_bytes, require_compound, require_list, source_metadata
+from ..voxel import ChunkedVoxelMap
+from .common import (
+    build_id_from_hash,
+    ensure_air_palette,
+    int_value,
+    require_bytes,
+    require_compound,
+    require_list,
+    source_metadata,
+)
 
 # Exact mappings are intentionally conservative. Unmapped values are preserved as typed placeholders.
 _LEGACY_EXACT: dict[tuple[int, int], str] = {
@@ -67,7 +85,7 @@ def parse_legacy(
     )
     palette_map: dict[tuple[int, int], int] = {}
     palette: list[PaletteEntry] = []
-    blocks: dict[IntVector3, int] = {}
+    blocks = ChunkedVoxelMap()
     unresolved = 0
     for index in range(volume):
         high = 0

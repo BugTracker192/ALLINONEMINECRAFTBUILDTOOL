@@ -67,7 +67,7 @@ def sha256(path: Path) -> str:
 
 def _mirror_source(destination: Path) -> Path:
     destination = destination.resolve()
-    if ROOT == destination or ROOT in destination.parents:
+    if destination == ROOT or ROOT in destination.parents:
         raise SystemExit("--scratch-root must be outside the release source tree")
     target = destination / ROOT.name
     ignored = shutil.ignore_patterns(
@@ -85,6 +85,28 @@ def _mirror_source(destination: Path) -> Path:
 def _cache_source(cache_root: Path) -> Path:
     target = cache_root / f"{ROOT.name}-source.tar.gz"
     cache_root.mkdir(parents=True, exist_ok=True)
+    asset_manifest = json.loads(
+        (ROOT / "app" / "bundled_assets" / "ASSET_MANIFEST.json").read_text(
+            "utf-8"
+        )
+    )
+    parts_root = ROOT / "app" / "bundled_assets" / str(
+        asset_manifest["delivery"]["parts_directory"]
+    )
+    declared_parts = asset_manifest["delivery"]["parts"]
+    required_part_paths: list[Path] = []
+    for item in declared_parts:
+        part = parts_root / str(item["name"])
+        if (
+            not part.is_file()
+            or part.stat().st_size != int(item["size_bytes"])
+            or sha256(part) != str(item["sha256"])
+        ):
+            raise SystemExit(
+                "warm-cache source is missing or has an invalid bundled-asset "
+                f"part: {part}"
+            )
+        required_part_paths.append(part)
     with tarfile.open(target, "w:gz", compresslevel=6) as archive:
         for path in sorted(ROOT.rglob("*")):
             if not path.is_file():
@@ -93,9 +115,20 @@ def _cache_source(cache_root: Path) -> Path:
             parts = set(relative.parts)
             if parts & {".git", ".venv", ".pytest_cache", "__pycache__"}:
                 continue
-            if relative.as_posix().startswith("app/bundled_assets/parts/"):
-                continue
             archive.add(path, arcname=f"{ROOT.name}/{relative.as_posix()}", recursive=False)
+    with tarfile.open(target, "r:gz") as archive:
+        names = set(archive.getnames())
+    required_parts = {
+        f"{ROOT.name}/{path.relative_to(ROOT).as_posix()}"
+        for path in required_part_paths
+    }
+    missing = sorted(required_parts - names)
+    if missing:
+        target.unlink(missing_ok=True)
+        raise SystemExit(
+            "warm-cache source archive omitted required bundled-asset parts: "
+            + ", ".join(missing)
+        )
     return target
 
 
@@ -203,7 +236,7 @@ def main() -> int:
 
     result = {
         "python": sys.version.split()[0],
-        "project_version": "1.1.0",
+        "project_version": "1.2.0",
         "bundled_asset": str(asset_path),
         "bundled_asset_sha256": actual,
         "bundled_asset_bytes": asset_path.stat().st_size,
@@ -222,6 +255,7 @@ def main() -> int:
             "asset": str(asset_path),
             "source_tar": str(source_tar),
             "source_tar_sha256": sha256(source_tar),
+            "source_tar_asset_parts_included": True,
         }
         if args.cache_venv:
             venv_tar = _cache_tree(

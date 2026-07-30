@@ -17,6 +17,13 @@ exact evidence explicitly.
 - The acceptance run is external to the source tree so release manifests never
   absorb generated evidence.
 
+This evidence is fixture-specific: Meduseld is a 108,917-placed-block,
+1,495-block-entity acceptance subject and is not evidence that the same paths
+fit a 4.2-million-block terrain map. Version 1.2.0 large-schematic work and its
+generated scale matrix are mapped separately in
+`TREE_OF_DREAMS_IMPLEMENTATION_TRACEABILITY.md`. The named Tree of Dreams
+real-file gate is pending until that exact unmodified schematic is available.
+
 ## A, B, and C: blockers, defects, and render ceiling
 
 | ID | Status | Implementation and evidence |
@@ -32,7 +39,7 @@ exact evidence explicitly.
 | B7 | Fixed | Manual seed-and-clip rooms seal requested bounds and report sealed openings and leak paths. Structure analysis also runs a conservative constructed-envelope recovery pass before room reporting. Tests cover both an open doorway and a clipped leak. |
 | B8 | Fixed | Interior/exterior consistency excludes decorative trapdoors without navigable approaches and reports the exclusion count. The Meduseld false-door result fell from 2,515 to 6, with 5,015 decorative trapdoors excluded. |
 | B9 | Fixed | Balcony findings carry `navigabilityWeight`; the report publishes both raw and weighted totals and excludes non-navigable fence/decorative candidates. |
-| B10 | Fixed | Appendix B in both autonomous manuals and the README document current interior, perspective, render, structure, authoring, comprehension, analysis, and quality surfaces. Runtime `--help` remains authoritative. |
+| B10 | Fixed | Appendix B plus the normative 1.2.0 large-schematic appendix in both autonomous manuals document the current interior, perspective, render, structure, authoring, comprehension, analysis, quality and patch-operation surfaces. Runtime `--help` remains authoritative. |
 | B11 | Fixed | Nested output paths raise the typed `OUTPUT_NESTED_IN_SOURCE` validation error with a suggested sibling path instead of `UNEXPECTED_ERROR`. |
 | B12 | Fixed | Slice renders honor `--name`; the default remains an axis/index descriptive name. |
 | B13 | Fixed | The `test` extra declares `pytest-asyncio`, asyncio mode/marker configuration is checked in, and async integration tests execute rather than silently skip. |
@@ -165,6 +172,10 @@ because a heuristic flags a finding.
 | J8 | Closed | The requested order is reflected in the implementation: rejection/furnishing, then lighting/coverage, facade scoring, and finally the composite gate/diff. |
 
 ## Real-schematic evidence summary
+
+Every result in this section applies to the 108,917-placed-block Meduseld
+fixture named above. It must not be generalized into a large-map capacity
+claim.
 
 - Both `.schem` and `.litematic` main-structure extracts re-imported with every
   mismatch class equal to zero.

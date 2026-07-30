@@ -27,7 +27,7 @@ def test_structure_inventory_streams_spatial_classification(
     )
     streaming = report["classification"]["streaming"]
 
-    assert streaming["method"] == "single-pass-spatial-window-aggregation-v1"
+    assert streaming["method"] == "terrain-reference-plus-column-connectivity-v2"
     assert streaming["processedPlacedBlocks"] == len(document.blocks)
     assert streaming["additionalCoordinateClassificationMap"] is False
     assert streaming["peakPlacedBlocksInWindow"] <= len(document.blocks)

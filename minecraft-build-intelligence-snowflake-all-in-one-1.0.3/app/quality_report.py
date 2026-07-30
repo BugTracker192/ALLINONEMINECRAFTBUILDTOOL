@@ -63,7 +63,15 @@ def _scorecard(
 
     lighting = analysis.get("lighting", {})
     lighting_rooms = lighting.get("rooms", [])
-    if lighting.get("analysisSkipped"):
+    if (
+        lighting.get("analysisSkipped")
+        or lighting.get("available") is False
+        or (
+            not lighting_rooms
+            and "passableCellCount" not in lighting
+            and "darkCellCount" not in lighting
+        )
+    ):
         dimensions["lighting"] = {
             "available": False,
             "score": None,
